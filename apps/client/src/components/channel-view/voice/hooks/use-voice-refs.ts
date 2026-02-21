@@ -109,7 +109,7 @@ const useVoiceRefs = (
       audioRef.current.srcObject = audioStream;
     }
 
-    audioRef.current.volume = userVolume / 100;
+    audioRef.current.volume = Math.min(userVolume / 100, 1.0);
   }, [audioStream, audioRef, userVolume]);
 
   useEffect(() => {
@@ -119,7 +119,7 @@ const useVoiceRefs = (
       screenShareAudioRef.current.srcObject = screenShareAudioStream;
     }
 
-    screenShareAudioRef.current.volume = userScreenVolume / 100;
+    screenShareAudioRef.current.volume = Math.min(userScreenVolume / 100, 1.0);
   }, [screenShareAudioStream, screenShareAudioRef, userScreenVolume]);
 
   useEffect(() => {

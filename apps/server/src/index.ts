@@ -14,6 +14,7 @@ import { config, SERVER_PRIVATE_IP } from './config';
 import { loadCrons } from './crons';
 import { loadDb } from './db';
 import { pluginManager } from './plugins';
+import { notificationManager } from './notifications';
 import { enqueueActivityLog } from './queues/activity-log';
 import { initVoiceRuntimes } from './runtimes';
 import { createServers } from './utils/create-servers';
@@ -23,6 +24,7 @@ import './utils/updater';
 
 await loadDb();
 await pluginManager.loadPlugins();
+await notificationManager.loadVapid();
 await createServers();
 await loadMediasoup();
 await initVoiceRuntimes();

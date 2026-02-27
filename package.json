@@ -21,5 +21,9 @@
   },
   "devDependencies": {
     "knip": "^5.80.0"
+  },
+  "dependencies": {
+    "@types/web-push": "^3.6.4",
+    "web-push": "^3.6.7"
   }
 }

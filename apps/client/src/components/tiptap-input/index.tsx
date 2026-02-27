@@ -3,17 +3,25 @@ import { useCustomEmojis } from '@/features/server/emojis/hooks';
 import type { TCommandInfo } from '@sharkord/shared';
 import { Button } from '@sharkord/ui';
 import Emoji, { gitHubEmojis } from '@tiptap/extension-emoji';
+import Link from '@tiptap/extension-link';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { ChevronDown, ChevronUp, Smile } from 'lucide-react';
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
+import type { TEmojiItem } from './helpers';
 import {
   COMMANDS_STORAGE_KEY,
   CommandSuggestion
 } from './plugins/command-suggestion';
 import { SlashCommands } from './plugins/slash-commands-extension';
-import { EmojiSuggestion } from './suggestions';
-import type { TEmojiItem } from './types';
+import { EmojiSuggestion } from './plugins/suggestions';
 
 type TTiptapInputProps = {
   disabled?: boolean;
@@ -55,6 +63,18 @@ const TiptapInput = memo(
             HTMLAttributes: {
               class: 'hard-break'
             }
+          }
+        }),
+        Link.configure({
+          autolink: true,
+          defaultProtocol: 'https',
+          openOnClick: false,
+          HTMLAttributes: {
+            target: '_blank',
+            rel: 'noopener noreferrer'
+          },
+          shouldAutoLink: (url) => {
+            return /^https?:\/\//i.test(url);
           }
         }),
         Emoji.configure({
@@ -213,15 +233,16 @@ const TiptapInput = memo(
         >
           <EditorContent
             editor={editor}
-            className={`border p-2 rounded w-full min-h-[40px] tiptap overflow-auto relative ${isExpanded ? 'max-h-80' : 'max-h-20'
-              } ${disabled ? 'opacity-50 cursor-not-allowed bg-muted' : ''}`}
+            className={`border p-2 rounded w-full min-h-10 tiptap overflow-auto relative transition-colors focus-within:border-ring [&_.ProseMirror:focus]:outline-none ${
+              isExpanded ? 'max-h-80' : 'max-h-20'
+            } ${disabled ? 'opacity-50 cursor-not-allowed bg-muted' : ''}`}
           />
           {showExpandButton && (isHovering || isFocused) && (
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="absolute -top-[4px] left-1/2 -translate-y-1/2 -translate-x-1/2 h-5 w-8 shrink-0 rounded border bg-background hover:bg-muted"
+              className="absolute -top-1 left-1/2 -translate-y-1/2 -translate-x-1/2 h-5 w-8 shrink-0 rounded border bg-background hover:bg-muted"
               onClick={() => setIsExpanded((e) => !e)}
               aria-label={isExpanded ? 'Collapse' : 'Expand'}
             >

@@ -3,7 +3,8 @@ import {
   LocalStorageKey,
   setLocalStorageItemAsJSON
 } from '@/helpers/storage';
-import { Resolution, type TDeviceSettings } from '@/types';
+import { Resolution, VideoCodec, type TDeviceSettings } from '@/types';
+import { DEFAULT_BITRATE } from '@sharkord/shared';
 import {
   createContext,
   memo,
@@ -16,6 +17,7 @@ import { useAvailableDevices } from './hooks/use-available-devices';
 
 const DEFAULT_DEVICE_SETTINGS: TDeviceSettings = {
   microphoneId: undefined,
+  playbackId: undefined,
   webcamId: undefined,
   webcamResolution: Resolution['720p'],
   webcamFramerate: 30,
@@ -25,7 +27,9 @@ const DEFAULT_DEVICE_SETTINGS: TDeviceSettings = {
   shareSystemAudio: true,
   mirrorOwnVideo: false,
   screenResolution: Resolution['720p'],
-  screenFramerate: 30
+  screenFramerate: 30,
+  screenCodec: VideoCodec.AUTO,
+  screenBitrate: DEFAULT_BITRATE
 };
 
 export type TDevicesProvider = {
@@ -67,7 +71,10 @@ const DevicesProvider = memo(({ children }: TDevicesProviderProps) => {
     );
 
     if (savedSettings) {
-      setDevices(savedSettings);
+      setDevices({
+        ...DEFAULT_DEVICE_SETTINGS,
+        ...savedSettings
+      });
     }
 
     setLoading(false);

@@ -5,8 +5,6 @@ import { getSettings } from '../db/queries/server';
 import { PLUGINS_PATH } from '../helpers/paths';
 import { logger } from '../logger';
 
-// curl -v http://localhost:4991/plugin/ui-test-plugin/index.js
-
 const pluginBundleRouteHandler = async (
   req: http.IncomingMessage,
   res: http.ServerResponse
@@ -44,6 +42,7 @@ const pluginBundleRouteHandler = async (
   } catch {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Invalid URL encoding' }));
+
     return;
   }
 
@@ -52,14 +51,18 @@ const pluginBundleRouteHandler = async (
   if (route !== 'plugin-bundle') {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not found' }));
+
     return;
   }
 
   if (!pluginId || filePathParts.length === 0) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(
-      JSON.stringify({ error: 'Plugin ID and file path are required in the URL' })
+      JSON.stringify({
+        error: 'Plugin ID and file path are required in the URL'
+      })
     );
+
     return;
   }
 
@@ -70,12 +73,14 @@ const pluginBundleRouteHandler = async (
   if (!pluginPath.startsWith(path.resolve(PLUGINS_PATH))) {
     res.writeHead(403, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Forbidden' }));
+
     return;
   }
 
   if (!requestedPath.startsWith(pluginPath)) {
     res.writeHead(403, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Forbidden' }));
+
     return;
   }
 
@@ -84,6 +89,7 @@ const pluginBundleRouteHandler = async (
   if (!fs.existsSync(requestedPath)) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'File not found on disk' }));
+
     return;
   }
 
@@ -92,6 +98,7 @@ const pluginBundleRouteHandler = async (
   if (stats.isDirectory()) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'File not found on disk' }));
+
     return;
   }
 

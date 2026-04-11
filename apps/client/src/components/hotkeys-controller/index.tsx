@@ -11,7 +11,6 @@ const HotkeysController = memo(() => {
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.repeat) return;
     pressedKeys.add(e.key);
-    console.log('Pressed keys:', pressedKeys);
     ShortcutRegistrar.submit(pressedKeys, e);
 
     setModifierKeysHeldMap({

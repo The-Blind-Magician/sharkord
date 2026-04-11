@@ -1,13 +1,15 @@
 import { TypingDots } from '@/components/typing-dots';
 import {
   useChannelById,
-  useChannelIds,
   useChannelsByCategoryId,
+  useCurrentVoiceChannelId,
   useSelectedChannelId
 } from '@/features/server/channels/hooks';
 import {
   useCan,
   useChannelCan,
+  useHasSharingScreenUsers,
+  useHasUnreadMentions,
   useTypingUsersByChannelId,
   useUnreadMessagesCount,
   useVoiceUsersByChannelId
@@ -36,52 +38,93 @@ import {
   getTrpcError
 } from '@sharkord/shared';
 import { Hash, Volume2 } from 'lucide-react';
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { ChannelContextMenu } from '../context-menus/channel';
+import { UnreadCount } from '../unread-count';
 import { ExternalStream } from './external-stream';
 import { useSelectChannel } from './hooks';
 import { VoiceUser } from './voice-user';
+import { Waveform } from './waveform';
 
 type TVoiceProps = Omit<TItemWrapperProps, 'children'> & {
   channel: TChannel;
 };
 
-const Voice = memo(({ channel, ...props }: TVoiceProps) => {
-  const users = useVoiceUsersByChannelId(channel.id);
-  const externalStreams = useVoiceChannelExternalStreamsList(channel.id);
-  const unreadCount = useUnreadMessagesCount(channel.id);
+const Voice = memo(
+  ({
+    channel,
+    isSelected,
+    ...props
+  }: TVoiceProps & { isSelected: boolean }) => {
+    const users = useVoiceUsersByChannelId(channel.id);
+    const externalStreams = useVoiceChannelExternalStreamsList(channel.id);
+    const unreadCount = useUnreadMessagesCount(channel.id);
+    const currentVoiceChannelId = useCurrentVoiceChannelId();
+    const someoneIsSharingScreen = useHasSharingScreenUsers(channel.id);
 
-  return (
-    <>
-      <ItemWrapper {...props}>
-        <Volume2 className="h-4 w-4" />
-        <span className="flex-1">{channel.name}</span>
-        {unreadCount > 0 && (
-          <div className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
-            {unreadCount > 99 ? '99+' : unreadCount}
+    const isVoiceActive = users.length > 0 || externalStreams.length > 0;
+    const isOwnChannel = currentVoiceChannelId === channel.id;
+
+    return (
+      <>
+        <ItemWrapper
+          {...props}
+          isSelected={isSelected}
+          className={cn(props.className, {
+            'text-blue-500':
+              someoneIsSharingScreen && (isOwnChannel || isSelected),
+            'text-green-500':
+              (isOwnChannel && !someoneIsSharingScreen) ||
+              (isSelected &&
+                !someoneIsSharingScreen &&
+                !isOwnChannel &&
+                isVoiceActive)
+          })}
+        >
+          {isVoiceActive ? (
+            <Waveform isScreenSharing={someoneIsSharingScreen} />
+          ) : (
+            <Volume2 className="h-4 w-4" />
+          )}
+
+          <span className="flex-1 truncate">{channel.name}</span>
+
+          {!isVoiceActive && unreadCount > 0 && (
+            <UnreadCount count={unreadCount} />
+          )}
+        </ItemWrapper>
+        {channel.type === 'VOICE' && (
+          <div
+            className="ml-6 space-y-1 mt-1"
+            onContextMenu={(e) => e.stopPropagation()}
+          >
+            {users.map((user) => (
+              <VoiceUser
+                key={user.id}
+                userId={user.id}
+                user={user}
+                isOwnChannel={isOwnChannel}
+              />
+            ))}
+            {externalStreams.map((stream) => (
+              <ExternalStream
+                key={stream.streamId}
+                title={stream.title}
+                tracks={stream.tracks}
+                pluginId={stream.pluginId}
+                streamKey={stream.key}
+                avatarUrl={stream.avatarUrl}
+                isOwnChannel={isOwnChannel}
+              />
+            ))}
           </div>
         )}
-      </ItemWrapper>
-      {channel.type === 'VOICE' && (
-        <div className="ml-6 space-y-1 mt-1">
-          {users.map((user) => (
-            <VoiceUser key={user.id} userId={user.id} user={user} />
-          ))}
-          {externalStreams.map((stream) => (
-            <ExternalStream
-              key={stream.streamId}
-              title={stream.title}
-              tracks={stream.tracks}
-              pluginId={stream.pluginId}
-              avatarUrl={stream.avatarUrl}
-            />
-          ))}
-        </div>
-      )}
-    </>
-  );
-});
+      </>
+    );
+  }
+);
 
 type TTextProps = Omit<TItemWrapperProps, 'children'> & {
   channel: TChannel;
@@ -90,6 +133,7 @@ type TTextProps = Omit<TItemWrapperProps, 'children'> & {
 const Text = memo(({ channel, ...props }: TTextProps) => {
   const typingUsers = useTypingUsersByChannelId(channel.id);
   const unreadCount = useUnreadMessagesCount(channel.id);
+  const hasUnreadMessages = useHasUnreadMentions(channel.id);
   const hasTypingUsers = typingUsers.length > 0;
 
   return (
@@ -102,9 +146,7 @@ const Text = memo(({ channel, ...props }: TTextProps) => {
         </div>
       )}
       {!hasTypingUsers && unreadCount > 0 && (
-        <div className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
-          {unreadCount > 99 ? '99+' : unreadCount}
-        </div>
+        <UnreadCount count={unreadCount} hasMention={hasUnreadMessages} />
       )}
     </ItemWrapper>
   );
@@ -175,7 +217,12 @@ const Channel = memo(({ channelId, isSelected, onClick }: TChannelProps) => {
     return null;
   }
 
-  if (!channelCan(ChannelPermission.VIEW_CHANNEL)) return null;
+  if (
+    !channelCan(ChannelPermission.VIEW_CHANNEL) &&
+    !can(Permission.MANAGE_CHANNELS)
+  ) {
+    return null;
+  }
 
   return (
     <div
@@ -219,10 +266,14 @@ type TChannelsProps = {
 };
 
 const Channels = memo(({ categoryId }: TChannelsProps) => {
+  const { t } = useTranslation('sidebar');
   const channels = useChannelsByCategoryId(categoryId);
   const selectedChannelId = useSelectedChannelId();
-  const channelIds = useChannelIds();
   const can = useCan();
+  const channelIds = useMemo(
+    () => channels.map((channel) => channel.id),
+    [channels]
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -262,10 +313,10 @@ const Channels = memo(({ categoryId }: TChannelsProps) => {
           channelIds: reorderedIds
         });
       } catch (error) {
-        toast.error(getTrpcError(error, 'Failed to reorder channels'));
+        toast.error(getTrpcError(error, t('failedReorderChannels')));
       }
     },
-    [categoryId, channelIds]
+    [categoryId, channelIds, t]
   );
 
   return (

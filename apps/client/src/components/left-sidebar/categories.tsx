@@ -3,7 +3,11 @@ import {
   useCategories,
   useCategoryById
 } from '@/features/server/categories/hooks';
-import { useCan } from '@/features/server/hooks';
+import {
+  useCan,
+  useCategoryUnreadData,
+  useHasVisibleChannelsInCategory
+} from '@/features/server/hooks';
 import { getTRPCClient } from '@/lib/trpc';
 import {
   DndContext,
@@ -23,10 +27,12 @@ import { Permission, getTrpcError } from '@sharkord/shared';
 import { IconButton } from '@sharkord/ui';
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import { memo, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { CategoryContextMenu } from '../context-menus/category';
 import { Dialog } from '../dialogs/dialogs';
 import { Protect } from '../protect';
+import { UnreadCount } from '../unread-count';
 import { Channels } from './channels';
 import { useCategoryExpanded } from './hooks';
 
@@ -35,8 +41,13 @@ type TCategoryProps = {
 };
 
 const Category = memo(({ categoryId }: TCategoryProps) => {
+  const { t } = useTranslation('sidebar');
+  const can = useCan();
+  const hasVisibleChannelsInCategory =
+    useHasVisibleChannelsInCategory(categoryId);
   const { expanded, toggleExpanded } = useCategoryExpanded(categoryId);
   const category = useCategoryById(categoryId);
+  const { unreadCount, hasUnreadMentions } = useCategoryUnreadData(categoryId);
 
   const {
     attributes,
@@ -51,7 +62,11 @@ const Category = memo(({ categoryId }: TCategoryProps) => {
     openDialog(Dialog.CREATE_CHANNEL, { categoryId });
   }, [categoryId]);
 
-  if (!category) {
+  if (
+    !category ||
+    (!hasVisibleChannelsInCategory &&
+      !can([Permission.MANAGE_CHANNELS, Permission.MANAGE_CATEGORIES]))
+  ) {
     return null;
   }
 
@@ -74,15 +89,22 @@ const Category = memo(({ categoryId }: TCategoryProps) => {
             size="sm"
             icon={ChevronIcon}
             onClick={toggleExpanded}
-            title={expanded ? 'Collapse category' : 'Expand category'}
+            title={expanded ? t('collapseCategory') : t('expandCategory')}
           />
           <CategoryContextMenu categoryId={category.id}>
             <span
               {...attributes}
               {...listeners}
-              className="cursor-grab active:cursor-grabbing flex-1"
+              className="cursor-grab active:cursor-grabbing flex min-w-0 flex-1 items-center gap-2"
             >
-              {category.name}
+              <span className="truncate">{category.name}</span>
+              {!expanded && unreadCount > 0 && (
+                <UnreadCount
+                  count={unreadCount}
+                  hasMention={hasUnreadMentions}
+                  className="ml-0"
+                />
+              )}
             </span>
           </CategoryContextMenu>
         </div>
@@ -93,7 +115,7 @@ const Category = memo(({ categoryId }: TCategoryProps) => {
             size="sm"
             icon={Plus}
             onClick={onCreateChannelClick}
-            title="Create channel"
+            title={t('createChannel')}
           />
         </Protect>
       </div>
@@ -104,6 +126,7 @@ const Category = memo(({ categoryId }: TCategoryProps) => {
 });
 
 const Categories = memo(() => {
+  const { t } = useTranslation('sidebar');
   const can = useCan();
   const categories = useCategories();
   const categoryIds = useMemo(
@@ -144,10 +167,10 @@ const Categories = memo(() => {
       try {
         await trpc.categories.reorder.mutate({ categoryIds: reorderedIds });
       } catch (error) {
-        toast.error(getTrpcError(error, 'Failed to reorder categories'));
+        toast.error(getTrpcError(error, t('failedReorderCategories')));
       }
     },
-    [categoryIds]
+    [categoryIds, t]
   );
 
   return (

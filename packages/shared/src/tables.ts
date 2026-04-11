@@ -6,6 +6,7 @@ import {
   channelRolePermissions,
   channels,
   channelUserPermissions,
+  directMessages,
   emojis,
   files,
   invites,
@@ -28,6 +29,7 @@ export type TCategory = InferSelectModel<typeof categories>;
 export type TChannel = InferSelectModel<typeof channels>;
 export type TFile = InferSelectModel<typeof files> & {
   _accessToken?: string;
+  _accessTokenExpiresAt?: number;
 };
 export type TUser = InferSelectModel<typeof users>;
 export type TLogin = InferSelectModel<typeof logins>;
@@ -46,6 +48,7 @@ export type TChannelUserPermission = InferSelectModel<
   typeof channelUserPermissions
 >;
 export type TChannelReadState = InferSelectModel<typeof channelReadStates>;
+export type TDirectMessage = InferSelectModel<typeof directMessages>;
 
 export type TISettings = InferInsertModel<typeof settings>;
 export type TIRole = InferInsertModel<typeof roles>;
@@ -69,10 +72,12 @@ export type TIChannelUserPermission = InferInsertModel<
   typeof channelUserPermissions
 >;
 export type TIChannelReadState = InferInsertModel<typeof channelReadStates>;
+export type TIDirectMessage = InferInsertModel<typeof directMessages>;
 
 export type TStorageSettings = Pick<
   TSettings,
   | 'storageUploadEnabled'
+  | 'storageFileSharingInDirectMessages'
   | 'storageQuota'
   | 'storageUploadMaxFileSize'
   | 'storageMaxAvatarSize'
@@ -80,6 +85,8 @@ export type TStorageSettings = Pick<
   | 'storageMaxFilesPerMessage'
   | 'storageSpaceQuotaByUser'
   | 'storageOverflowAction'
+  | 'storageSignedUrlsEnabled'
+  | 'storageSignedUrlsTtlSeconds'
 >;
 
 // joined types
@@ -109,10 +116,16 @@ export type TJoinedMessageReaction = TMessageReaction & {
   file: TFile | null;
 };
 
+export type TMessageReplyPreview = Pick<
+  TMessage,
+  'id' | 'content' | 'userId' | 'pluginId'
+>;
+
 export type TJoinedMessage = TMessage & {
   files: TFile[];
   reactions: TJoinedMessageReaction[];
   replyCount?: number;
+  replyTo?: TMessageReplyPreview | null;
 };
 
 export type TJoinedEmoji = TEmoji & {

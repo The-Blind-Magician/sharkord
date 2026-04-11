@@ -10,16 +10,21 @@ import { useMessages } from '@/features/server/messages/hooks';
 import { playSound } from '@/features/server/sounds/actions';
 import { SoundType } from '@/features/server/types';
 import { getTRPCClient } from '@/lib/trpc';
+import type { TReplyTarget } from '@/types';
 import {
   ChannelPermission,
   TYPING_MS,
   getTrpcError,
-  linkifyHtml
+  prepareMessageHtml,
+  type TJoinedMessage
 } from '@sharkord/shared';
 import { Spinner } from '@sharkord/ui';
 import { throttle } from 'lodash-es';
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { useScrollController } from './hooks/use-scroll-controller';
+import { useScrollToJumpTarget } from './hooks/use-scroll-to-jump-target';
 import { MessagesGroup } from './messages-group';
 import { TextSkeleton } from './text-skeleton';
 import { TextTopbar } from './text-top-bar';
@@ -28,13 +33,14 @@ import {
   getDraftMessage,
   setDraftMessage
 } from './use-draft-messages';
-import { useScrollController } from './use-scroll-controller';
 
 type TChannelProps = {
   channelId: number;
+  onClose?: () => void;
 };
 
-const TextChannel = memo(({ channelId }: TChannelProps) => {
+const TextChannel = memo(({ channelId, onClose }: TChannelProps) => {
+  const { t } = useTranslation();
   const {
     messages,
     hasMore,
@@ -45,15 +51,32 @@ const TextChannel = memo(({ channelId }: TChannelProps) => {
     scrollToMessage
   } = useMessages(channelId);
 
+  useScrollToJumpTarget(channelId, scrollToMessage);
+
   const draftChannelKey = getChannelDraftKey(channelId);
 
   const [newMessage, setNewMessage] = useState(
     getDraftMessage(draftChannelKey)
   );
+  const [replyingToMessage, setReplyingToMessage] = useState<
+    TJoinedMessage | undefined
+  >();
   const typingUsers = useTypingUsersByChannelId(channelId);
   const composeRef = useRef<TMessageComposeHandle>(null);
 
-  const { containerRef, onScroll } = useScrollController({
+  const replyTarget = useMemo<TReplyTarget | undefined>(() => {
+    if (!replyingToMessage) {
+      return undefined;
+    }
+
+    if (replyingToMessage.pluginId) {
+      return { userId: null, pluginId: replyingToMessage.pluginId };
+    }
+
+    return { userId: replyingToMessage.userId, pluginId: null };
+  }, [replyingToMessage]);
+
+  const { containerRef, onScroll, onAsyncContentLoaded } = useScrollController({
     messages,
     fetching,
     hasMore,
@@ -93,22 +116,35 @@ const TextChannel = memo(({ channelId }: TChannelProps) => {
 
       try {
         await trpc.messages.send.mutate({
-          content: linkifyHtml(message),
+          content: prepareMessageHtml(message),
           channelId,
-          files: files.map((f) => f.id)
+          files: files.map((f) => f.id),
+          replyToMessageId: replyingToMessage?.id
         });
 
         playSound(SoundType.MESSAGE_SENT);
       } catch (error) {
-        toast.error(getTrpcError(error, 'Failed to send message'));
+        toast.error(getTrpcError(error, t('failedSendMessage')));
         return false;
       }
 
       setNewMessageHandler('');
+      setReplyingToMessage(undefined);
+
       return true;
     },
-    [channelId, sendTypingSignal, setNewMessageHandler]
+    [
+      channelId,
+      sendTypingSignal,
+      setNewMessageHandler,
+      t,
+      replyingToMessage?.id
+    ]
   );
+
+  const onReplyMessageSelect = useCallback((message: TJoinedMessage) => {
+    setReplyingToMessage(message);
+  }, []);
 
   if (!channelCan(ChannelPermission.VIEW_CHANNEL) || loading) {
     return <TextSkeleton />;
@@ -127,17 +163,27 @@ const TextChannel = memo(({ channelId }: TChannelProps) => {
         </div>
       )}
 
-      <TextTopbar onScrollToMessage={scrollToMessage} />
+      <TextTopbar
+        onScrollToMessage={scrollToMessage}
+        channelId={channelId}
+        onClose={onClose}
+      />
 
       <div
         ref={containerRef}
         onScroll={onScroll}
+        onLoadCapture={onAsyncContentLoaded}
         data-messages-container
         className="flex-1 overflow-y-auto overflow-x-hidden p-2 animate-in fade-in duration-500"
       >
         <div className="space-y-4">
           {groupedMessages.map((group, index) => (
-            <MessagesGroup key={index} group={group} />
+            <MessagesGroup
+              key={index}
+              group={group}
+              onReplyMessageSelect={onReplyMessageSelect}
+              replyTargetMessageId={replyingToMessage?.id}
+            />
           ))}
         </div>
       </div>
@@ -151,6 +197,8 @@ const TextChannel = memo(({ channelId }: TChannelProps) => {
         onTyping={sendTypingSignal}
         typingUsers={typingUsers}
         showPluginSlot
+        onCancelReply={() => setReplyingToMessage(undefined)}
+        replyTarget={replyTarget}
       />
     </>
   );

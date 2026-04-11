@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@sharkord/shared';
 import { BunUpdater } from 'bun-sfe-autoupdater';
 import { config } from '../config';
 import { logger } from '../logger';
@@ -46,7 +47,7 @@ class Updater {
       // the app will restart to apply the update
       await this.bunUpdater.checkForUpdates();
     } catch (error) {
-      logger.error('Failed to check for updates:', error);
+      logger.error('Failed to check for updates: %s', getErrorMessage(error));
     } finally {
       this.isUpdating = false;
     }

@@ -1,6 +1,6 @@
 import type { IRootState } from '@/features/store';
 import { createSelector } from '@reduxjs/toolkit';
-import { UserStatus } from '@sharkord/shared';
+import { DELETED_USER_IDENTITY_AND_NAME, UserStatus } from '@sharkord/shared';
 import { createCachedSelector } from 're-reselect';
 
 const STATUS_ORDER: Record<string, number> = {
@@ -34,15 +34,25 @@ export const usersSelector = createSelector(
   }
 );
 
+// returns all users except the own user and deleted users
+export const filteredUsersSelector = createSelector(
+  [usersSelector, ownUserIdSelector],
+  (users, ownUserId) =>
+    users.filter(
+      (user) =>
+        user.name !== DELETED_USER_IDENTITY_AND_NAME && user.id !== ownUserId
+    )
+);
+
 export const ownUserSelector = createSelector(
   [ownUserIdSelector, usersSelector],
   (ownUserId, users) => users.find((user) => user.id === ownUserId)
 );
 
 export const userByIdSelector = createCachedSelector(
-  [usersSelector, (_: IRootState, userId: number) => userId],
+  [usersSelector, (_: IRootState, userId: number | null) => userId],
   (users, userId) => users.find((user) => user.id === userId)
-)((_, userId: number) => userId);
+)((_, userId: number | null) => userId);
 
 export const isOwnUserSelector = createCachedSelector(
   [ownUserIdSelector, (_: IRootState, userId: number) => userId],

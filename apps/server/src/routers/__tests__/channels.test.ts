@@ -2,7 +2,6 @@ import { ChannelPermission, ChannelType } from '@sharkord/shared';
 import { describe, expect, test } from 'bun:test';
 import { initTest } from '../../__tests__/helpers';
 import { getChannelsReadStatesForUser } from '../../db/queries/channels';
-import { generateFileToken, verifyFileToken } from '../../helpers/files-crypto';
 
 describe('channels router', () => {
   test('should throw when user lacks permissions (add)', async () => {
@@ -94,16 +93,6 @@ describe('channels router', () => {
     ).rejects.toThrow('Insufficient permissions');
   });
 
-  test('should throw when user lacks permissions (rotateFileAccessToken)', async () => {
-    const { caller } = await initTest(2);
-
-    await expect(
-      caller.channels.rotateFileAccessToken({
-        channelId: 1
-      })
-    ).rejects.toThrow('Insufficient permissions');
-  });
-
   test('should create a new text channel', async () => {
     const { caller } = await initTest();
 
@@ -114,7 +103,7 @@ describe('channels router', () => {
     });
 
     const channel = await caller.channels.get({
-      channelId: 3
+      channelId: 4
     });
 
     expect(channel).toBeDefined();
@@ -133,7 +122,7 @@ describe('channels router', () => {
     });
 
     const channel = await caller.channels.get({
-      channelId: 3
+      channelId: 4
     });
 
     expect(channel).toBeDefined();
@@ -192,19 +181,19 @@ describe('channels router', () => {
   test('should delete existing channel', async () => {
     const { caller } = await initTest();
 
-    await caller.channels.add({
+    const newChannelId = await caller.channels.add({
       type: ChannelType.TEXT,
       name: 'temp-channel',
       categoryId: 1
     });
 
     await caller.channels.delete({
-      channelId: 3
+      channelId: newChannelId
     });
 
     await expect(
       caller.channels.get({
-        channelId: 3
+        channelId: newChannelId
       })
     ).rejects.toThrow('Channel not found');
   });
@@ -232,13 +221,13 @@ describe('channels router', () => {
   test('should reorder channels in a category', async () => {
     const { caller } = await initTest();
 
-    await caller.channels.add({
+    const channelAId = await caller.channels.add({
       type: ChannelType.TEXT,
       name: 'channel-a',
       categoryId: 1
     });
 
-    await caller.channels.add({
+    const channelBId = await caller.channels.add({
       type: ChannelType.TEXT,
       name: 'channel-b',
       categoryId: 1
@@ -246,20 +235,53 @@ describe('channels router', () => {
 
     await caller.channels.reorder({
       categoryId: 1,
-      channelIds: [4, 3, 1, 2]
+      channelIds: [channelAId, 3, 1, 2]
     });
 
-    const [channel1, channel2, channel3, channel4] = await Promise.all([
+    const [channel1, channel2, channelA, channelB] = await Promise.all([
       caller.channels.get({ channelId: 1 }),
       caller.channels.get({ channelId: 2 }),
-      caller.channels.get({ channelId: 3 }),
-      caller.channels.get({ channelId: 4 })
+      caller.channels.get({ channelId: channelAId }),
+      caller.channels.get({ channelId: channelBId })
     ]);
 
-    expect(channel4.position).toBe(1);
-    expect(channel3.position).toBe(2);
-    expect(channel1.position).toBe(3);
-    expect(channel2.position).toBe(4);
+    expect(channelA.position).toBe(1);
+    expect(channel1.position).toBe(2);
+    expect(channelB.position).toBe(3);
+    expect(channel2.position).toBe(1);
+  });
+
+  test('should reorder channels when some ids are missing from payload', async () => {
+    const { caller } = await initTest();
+
+    const channelAId = await caller.channels.add({
+      type: ChannelType.TEXT,
+      name: 'channel-a',
+      categoryId: 1
+    });
+
+    const channelBId = await caller.channels.add({
+      type: ChannelType.TEXT,
+      name: 'channel-b',
+      categoryId: 1
+    });
+
+    await caller.channels.reorder({
+      categoryId: 1,
+      channelIds: [channelBId, 1]
+    });
+
+    const [channel1, channel2, channelA, channelB] = await Promise.all([
+      caller.channels.get({ channelId: 1 }),
+      caller.channels.get({ channelId: 2 }),
+      caller.channels.get({ channelId: channelAId }),
+      caller.channels.get({ channelId: channelBId })
+    ]);
+
+    expect(channelB.position).toBe(1);
+    expect(channel1.position).toBe(2);
+    expect(channelA.position).toBe(3);
+    expect(channel2.position).toBe(1);
   });
 
   test('should set channel permissions for a role', async () => {
@@ -666,6 +688,72 @@ describe('channels router', () => {
     expect(afterMark[2]).toBe(0);
   });
 
+  test('should not include DM channels between other users in read states', async () => {
+    // the seed creates a DM channel (id 3) between User A (3) and User B (4)
+    // with a message from User A. User 1 and User 2 should NOT see this in their read states.
+
+    const readStatesUser1 = await getChannelsReadStatesForUser(1);
+    const readStatesUser2 = await getChannelsReadStatesForUser(2);
+
+    // channel 3 is the DM between User A and User B - should not appear for User 1 or User 2
+    expect(readStatesUser1[3]).toBeUndefined();
+    expect(readStatesUser2[3]).toBeUndefined();
+  });
+
+  test('should include DM channels the user participates in for read states', async () => {
+    // User B (4) is a participant in the DM channel (3) with User A (3)
+    // User A sent a message, so User B should see 1 unread
+    const readStatesUserB = await getChannelsReadStatesForUser(4);
+
+    expect(readStatesUserB[3]).toBe(1);
+  });
+
+  test('should not count own messages as unread in DM channels', async () => {
+    // User A (3) sent the message in the DM channel (3), so they should see 0 unread
+    const readStatesUserA = await getChannelsReadStatesForUser(3);
+
+    expect(readStatesUserA[3]).toBe(0);
+  });
+
+  test('should still include regular channels in read states when DM channels exist', async () => {
+    // the seed has a message in channel 1 (General) from User 1 (Test Owner)
+    // User 2 should see 1 unread in channel 1
+    const readStatesUser2 = await getChannelsReadStatesForUser(2);
+
+    expect(readStatesUser2[1]).toBe(1);
+  });
+
+  test('should track unread counts correctly across multiple channels', async () => {
+    const { caller: caller1 } = await initTest(1);
+    const { caller: caller2 } = await initTest(2);
+
+    // user 1 sends messages in channel 1 and channel 2
+    await caller1.messages.send({
+      channelId: 1,
+      content: 'Message in channel 1',
+      files: []
+    });
+
+    await caller1.messages.send({
+      channelId: 2,
+      content: 'Message in channel 2',
+      files: []
+    });
+
+    const readStatesUser2 = await getChannelsReadStatesForUser(2);
+
+    expect(readStatesUser2[1]).toBe(2); // 1 message from mocks + 1 new message
+    expect(readStatesUser2[2]).toBe(1);
+
+    // user 2 marks channel 1 as read
+    await caller2.channels.markAsRead({ channelId: 1 });
+
+    const afterMarkUser2 = await getChannelsReadStatesForUser(2);
+
+    expect(afterMarkUser2[1]).toBe(0);
+    expect(afterMarkUser2[2]).toBe(1);
+  });
+
   test('should validate channel name length (too short)', async () => {
     const { caller } = await initTest();
 
@@ -794,132 +882,148 @@ describe('channels router', () => {
       categoryId: 2
     });
 
-    const channel1 = await caller.channels.get({ channelId: 3 });
-    const channel2 = await caller.channels.get({ channelId: 4 });
+    const channel1 = await caller.channels.get({ channelId: 4 });
+    const channel2 = await caller.channels.get({ channelId: 5 });
 
     expect(channel1.categoryId).toBe(1);
     expect(channel2.categoryId).toBe(2);
   });
 
-  test('should rotate file access token for a channel', async () => {
-    const { caller } = await initTest();
-
-    const channelBefore = await caller.channels.get({ channelId: 1 });
-    const originalToken = channelBefore.fileAccessToken;
-
-    expect(originalToken).toBeDefined();
-    expect(channelBefore.fileAccessTokenUpdatedAt).toBeDefined();
-
-    await caller.channels.rotateFileAccessToken({
-      channelId: 1
-    });
-
-    const channelAfter = await caller.channels.get({ channelId: 1 });
-    const newToken = channelAfter.fileAccessToken;
-
-    expect(newToken).toBeDefined();
-    expect(newToken).not.toBe(originalToken);
-    expect(channelAfter.fileAccessTokenUpdatedAt).toBeGreaterThan(
-      channelBefore.fileAccessTokenUpdatedAt!
-    );
-  });
-
-  test('should throw when rotating token for non-existing channel', async () => {
+  test('should throw when deleting a DM channel', async () => {
     const { caller } = await initTest();
 
     await expect(
-      caller.channels.rotateFileAccessToken({
-        channelId: 999
+      caller.channels.delete({
+        channelId: 3
       })
-    ).rejects.toThrow('Channel not found');
+    ).rejects.toThrow('Cannot delete DM channels');
   });
 
-  test('should generate unique tokens on multiple rotations', async () => {
+  test('should throw when updating a DM channel', async () => {
     const { caller } = await initTest();
 
-    const channel = await caller.channels.get({ channelId: 1 });
-    const originalToken = channel.fileAccessToken;
-
-    await caller.channels.rotateFileAccessToken({
-      channelId: 1
-    });
-
-    const afterFirstRotation = await caller.channels.get({ channelId: 1 });
-    const firstNewToken = afterFirstRotation.fileAccessToken;
-
-    await caller.channels.rotateFileAccessToken({
-      channelId: 1
-    });
-
-    const afterSecondRotation = await caller.channels.get({ channelId: 1 });
-    const secondNewToken = afterSecondRotation.fileAccessToken;
-
-    expect(originalToken).not.toBe(firstNewToken);
-    expect(firstNewToken).not.toBe(secondNewToken);
-    expect(originalToken).not.toBe(secondNewToken);
+    await expect(
+      caller.channels.update({
+        channelId: 3,
+        name: 'new-name',
+        topic: 'new-topic',
+        private: false
+      })
+    ).rejects.toThrow('Cannot update DM channels');
   });
 
-  test('should invalidate old file tokens after rotation', async () => {
-    const { caller } = await initTest();
+  test('should mark DM channel as read', async () => {
+    // seed: DM channel 3 between User A (3) and User B (4), with 1 message from User A
+    const { caller: callerB } = await initTest(4);
 
-    await caller.channels.update({
-      channelId: 1,
-      private: true
-    });
+    const beforeRead = await getChannelsReadStatesForUser(4);
 
-    const channelBefore = await caller.channels.get({ channelId: 1 });
-    const oldToken = channelBefore.fileAccessToken;
+    expect(beforeRead[3]).toBe(1);
 
-    const oldFileToken = generateFileToken(123, oldToken);
+    await callerB.channels.markAsRead({ channelId: 3 });
 
-    await caller.channels.rotateFileAccessToken({
-      channelId: 1
-    });
+    const afterRead = await getChannelsReadStatesForUser(4);
 
-    const channelAfter = await caller.channels.get({ channelId: 1 });
-    const newToken = channelAfter.fileAccessToken;
-
-    const newFileToken = generateFileToken(123, newToken);
-
-    expect(oldFileToken).not.toBe(newFileToken);
-
-    const isOldTokenValid = verifyFileToken(123, newToken, oldFileToken);
-    const isNewTokenValid = verifyFileToken(123, newToken, newFileToken);
-
-    expect(isOldTokenValid).toBe(false);
-    expect(isNewTokenValid).toBe(true);
+    expect(afterRead[3]).toBe(0);
   });
 
-  test('should allow rotating token for both public and private channels', async () => {
+  test('should track unread count correctly with multiple DM messages', async () => {
+    // seed already has 1 message from User A in DM channel 3
+    const { caller: callerA } = await initTest(3);
+
+    await callerA.messages.send({
+      channelId: 3,
+      content: 'DM message 2',
+      files: []
+    });
+
+    await callerA.messages.send({
+      channelId: 3,
+      content: 'DM message 3',
+      files: []
+    });
+
+    const readStatesB = await getChannelsReadStatesForUser(4);
+
+    // 1 from seed + 2 new = 3 unread for User B
+    expect(readStatesB[3]).toBe(3);
+  });
+
+  test('should update existing DM read state when marking as read again', async () => {
+    const { caller: callerA } = await initTest(3);
+    const { caller: callerB } = await initTest(4);
+
+    // User B marks as read (clears the seed message)
+    await callerB.channels.markAsRead({ channelId: 3 });
+
+    const afterFirstMark = await getChannelsReadStatesForUser(4);
+
+    expect(afterFirstMark[3]).toBe(0);
+
+    // User A sends another message
+    await callerA.messages.send({
+      channelId: 3,
+      content: 'New DM after mark',
+      files: []
+    });
+
+    const beforeSecondMark = await getChannelsReadStatesForUser(4);
+
+    expect(beforeSecondMark[3]).toBe(1);
+
+    // User B marks as read again
+    await callerB.channels.markAsRead({ channelId: 3 });
+
+    const afterSecondMark = await getChannelsReadStatesForUser(4);
+
+    expect(afterSecondMark[3]).toBe(0);
+  });
+
+  test('should not count own messages as unread in DM (interactive)', async () => {
+    const { caller: callerA } = await initTest(3);
+
+    // User A sends more messages in the DM
+    await callerA.messages.send({
+      channelId: 3,
+      content: 'Another message from A',
+      files: []
+    });
+
+    const readStatesA = await getChannelsReadStatesForUser(3);
+
+    // User A sent all messages, so they should have 0 unread
+    expect(readStatesA[3]).toBe(0);
+  });
+
+  test('should throw when non-participant tries to mark DM channel as read', async () => {
+    // User 1 is not a participant in DM channel 3 (between User A and User B)
+    const { caller } = await initTest(1);
+
+    await expect(caller.channels.markAsRead({ channelId: 3 })).rejects.toThrow(
+      'You are not a participant in this DM channel'
+    );
+  });
+
+  test('should throw when updating permissions for a DM channel', async () => {
     const { caller } = await initTest();
 
-    const publicChannelBefore = await caller.channels.get({ channelId: 1 });
-    const publicTokenBefore = publicChannelBefore.fileAccessToken;
+    await expect(
+      caller.channels.updatePermissions({
+        channelId: 3,
+        roleId: 1,
+        permissions: [ChannelPermission.VIEW_CHANNEL]
+      })
+    ).rejects.toThrow('Cannot update DM channel permissions');
+  });
 
-    await caller.channels.rotateFileAccessToken({
-      channelId: 1
-    });
+  test('should throw when deleting permissions for a DM channel', async () => {
+    const { caller } = await initTest();
 
-    const publicChannelAfter = await caller.channels.get({ channelId: 1 });
-    const publicTokenAfter = publicChannelAfter.fileAccessToken;
-
-    expect(publicTokenAfter).not.toBe(publicTokenBefore);
-
-    await caller.channels.update({
-      channelId: 2,
-      private: true
-    });
-
-    const privateChannelBefore = await caller.channels.get({ channelId: 2 });
-    const privateTokenBefore = privateChannelBefore.fileAccessToken;
-
-    await caller.channels.rotateFileAccessToken({
-      channelId: 2
-    });
-
-    const privateChannelAfter = await caller.channels.get({ channelId: 2 });
-    const privateTokenAfter = privateChannelAfter.fileAccessToken;
-
-    expect(privateTokenAfter).not.toBe(privateTokenBefore);
+    await expect(
+      caller.channels.deletePermissions({
+        channelId: 3,
+        roleId: 1
+      })
+    ).rejects.toThrow('Cannot delete DM channel permissions');
   });
 });

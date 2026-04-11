@@ -2,10 +2,13 @@ import { Dialog } from '@/components/dialogs/dialogs';
 import { logDebug } from '@/helpers/browser-logger';
 import { getHostFromServer } from '@/helpers/get-file-url';
 import { cleanup, connectToTRPC, getTRPCClient } from '@/lib/trpc';
+import type { TMessageJumpToTarget } from '@/types';
 import { type TPublicServerSettings, type TServerInfo } from '@sharkord/shared';
 import { toast } from 'sonner';
+import { setMessageJumpTarget, setSelectedDmChannelId } from '../app/actions';
 import { openDialog } from '../dialogs/actions';
 import { store } from '../store';
+import { setSelectedChannelId } from './channels/actions';
 import {
   processPluginComponents,
   setPluginCommands,
@@ -38,6 +41,10 @@ export const setServerId = (id: string) => {
   store.dispatch(serverSliceActions.setServerId(id));
 };
 
+export const setDmsOpen = (open: boolean) => {
+  store.dispatch(serverSliceActions.setDmsOpen(open));
+};
+
 export const setPublicServerSettings = (
   settings: TPublicServerSettings | undefined
 ) => {
@@ -46,6 +53,10 @@ export const setPublicServerSettings = (
 
 export const setInfo = (info: TServerInfo | undefined) => {
   store.dispatch(serverSliceActions.setInfo(info));
+};
+
+export const setActiveFullscreenPluginId = (pluginId: string | undefined) => {
+  store.dispatch(serverSliceActions.setActiveFullscreenPluginId(pluginId));
 };
 
 export const connect = async () => {
@@ -69,7 +80,11 @@ export const connect = async () => {
     return;
   }
 
-  await joinServer(handshakeHash);
+  const { showWelcomeDialog } = await joinServer(handshakeHash);
+
+  if (showWelcomeDialog) {
+    openDialog(Dialog.WELCOME_PROFILE_SETUP);
+  }
 };
 
 export const joinServer = async (handshakeHash: string, password?: string) => {
@@ -89,11 +104,30 @@ export const joinServer = async (handshakeHash: string, password?: string) => {
   );
 
   setPluginComponents(components);
+
+  return {
+    showWelcomeDialog: data.showWelcomeDialog
+  };
 };
 
 export const disconnectFromServer = () => {
   cleanup();
   unsubscribeFromServer?.();
+};
+
+export const jumpToMessage = (target: TMessageJumpToTarget) => {
+  setMessageJumpTarget(target);
+
+  if (target.isDm) {
+    setDmsOpen(true);
+    setSelectedDmChannelId(target.channelId);
+
+    return;
+  }
+
+  setDmsOpen(false);
+  setSelectedDmChannelId(undefined);
+  setSelectedChannelId(target.channelId);
 };
 
 window.useToken = async (token: string) => {

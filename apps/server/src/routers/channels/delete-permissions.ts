@@ -3,12 +3,14 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../db';
 import { publishChannelPermissions } from '../../db/publishers';
-import { getAffectedUserIdsForChannel } from '../../db/queries/channels';
+import { getAffectedOnlineUserIdsForChannel } from '../../db/queries/channels';
+import { isDirectMessageChannel } from '../../db/queries/dms';
 import {
   channelRolePermissions,
   channelUserPermissions
 } from '../../db/schema';
 import { enqueueActivityLog } from '../../queues/activity-log';
+import { invariant } from '../../utils/invariant';
 import { protectedProcedure } from '../../utils/trpc';
 
 const deletePermissionsRoute = protectedProcedure
@@ -29,7 +31,12 @@ const deletePermissionsRoute = protectedProcedure
   .mutation(async ({ input, ctx }) => {
     await ctx.needsPermission(Permission.MANAGE_CHANNEL_PERMISSIONS);
 
-    const affectedUserIds = await getAffectedUserIdsForChannel(input.channelId);
+    const isDmChannel = await isDirectMessageChannel(input.channelId);
+
+    invariant(!isDmChannel, {
+      code: 'FORBIDDEN',
+      message: 'Cannot delete DM channel permissions'
+    });
 
     await db.transaction(async (tx) => {
       if (input.userId) {
@@ -52,6 +59,10 @@ const deletePermissionsRoute = protectedProcedure
           );
       }
     });
+
+    const affectedUserIds = await getAffectedOnlineUserIdsForChannel(
+      input.channelId
+    );
 
     publishChannelPermissions(affectedUserIds);
     enqueueActivityLog({

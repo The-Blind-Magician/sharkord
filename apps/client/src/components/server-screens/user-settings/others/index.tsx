@@ -1,3 +1,4 @@
+import { LanguageSwitcher } from '@/components/language-switcher';
 import { setAutoJoinLastChannel } from '@/features/app/actions';
 import { useAutoJoinLastChannel } from '@/features/app/hooks';
 import {
@@ -10,28 +11,31 @@ import {
   Switch
 } from '@sharkord/ui';
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const Others = memo(() => {
+  const { t } = useTranslation('settings');
   const autoJoinLastChannel = useAutoJoinLastChannel();
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Others</CardTitle>
-        <CardDescription>
-          In this section, you can update settings related to Sharkord's
-          behavior.
-        </CardDescription>
+        <CardTitle>{t('othersTitle')}</CardTitle>
+        <CardDescription>{t('othersDesc')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <Group
-          label="Auto-Join Last Channel"
-          description="When enabled, Sharkord will automatically select the last text channel you were in when you connect to the server."
+          label={t('autoJoinLastChannelLabel')}
+          description={t('autoJoinLastChannelDesc')}
         >
           <Switch
             checked={autoJoinLastChannel}
             onCheckedChange={(value) => setAutoJoinLastChannel(value)}
           />
+        </Group>
+
+        <Group label={t('languageLabel')} description={t('languageDesc')}>
+          <LanguageSwitcher />
         </Group>
       </CardContent>
     </Card>

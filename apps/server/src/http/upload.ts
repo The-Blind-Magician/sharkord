@@ -1,4 +1,4 @@
-import { UploadHeaders } from '@sharkord/shared';
+import { getErrorMessage, UploadHeaders } from '@sharkord/shared';
 import fs from 'fs';
 import http from 'http';
 import z from 'zod';
@@ -89,14 +89,17 @@ const uploadFileRouteHandler = async (
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(tempFile));
     } catch (error) {
-      logger.error('Error processing uploaded file:', error);
+      logger.error(
+        'Error processing uploaded file: %s',
+        getErrorMessage(error)
+      );
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'File processing failed' }));
     }
   });
 
   fileStream.on('error', (err) => {
-    logger.error('Error uploading file:', err);
+    logger.error('Error uploading file: %s', getErrorMessage(err));
 
     res.writeHead(500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'File upload failed' }));

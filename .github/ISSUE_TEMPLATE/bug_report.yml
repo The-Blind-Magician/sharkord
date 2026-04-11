@@ -19,11 +19,15 @@ body:
     validations:
       required: true
 
-  - type: input
+  - type: textarea
     id: environment
     attributes:
       label: Environment
-      placeholder: e.g. Ubuntu 24.04, Docker 19.03, Windows 10, etc.
+      value: |
+        - **OS:** <e.g. Windows 10, CachyOS>
+        - **Browser:** <e.g. Chrome 90, Firefox 88>
+        - **Using reverse proxy:** <e.g. Nginx, Caddy>
+        - **Additional details:** <e.g. running in Docker, using custom config>
     validations:
       required: true
 
@@ -32,7 +36,7 @@ body:
     attributes:
       label: Steps to Reproduce
       description: Provide clear step-by-step instructions
-      placeholder: |
+      value: |
         1. Go to...
         2. Click...
         3. Observe...
@@ -43,6 +47,13 @@ body:
     id: expected
     attributes:
       label: Expected Behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
     validations:
       required: true
 

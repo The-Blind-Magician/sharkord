@@ -4,8 +4,17 @@ import { closeServerScreens } from '@/features/server-screens/actions';
 import { useCurrentVoiceChannelId } from '@/features/server/channels/hooks';
 import { usePublicServerSettings } from '@/features/server/hooks';
 import { useOwnVoiceState } from '@/features/server/voice/hooks';
+import { MICROPHONE_GATE_DEFAULT_THRESHOLD_DB } from '@/helpers/audio-gate';
+import {
+  getNoiseGateWorkletAvailabilitySnapshot,
+  subscribeNoiseGateWorkletAvailability
+} from '@/helpers/audio-worklet/noise-gate-worklet';
+import {
+  getRestrictOwnAudioSupport,
+  getSuppressLocalAudioPlaybackSupport
+} from '@/helpers/get-display-media-support';
 import { useForm } from '@/hooks/use-form';
-import { Resolution, VideoCodec } from '@/types';
+import { NoiseSuppression, Resolution, VideoCodec } from '@/types';
 import { DEFAULT_BITRATE } from '@sharkord/shared';
 import {
   Alert,
@@ -31,33 +40,61 @@ import {
 } from '@sharkord/ui';
 import { filesize } from 'filesize';
 import { Info } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore
+} from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { useAvailableDevices } from './hooks/use-available-devices';
 import { useMicrophoneTest } from './hooks/use-microphone-test';
 import { useWebcamTest } from './hooks/use-webcam-test';
+import { MicrophoneTestLevelBar } from './microphone-test-level-bar';
 import ResolutionFpsControl from './resolution-fps-control';
+import { RestrictOwnAudioAlert } from './restrict-own-audio-alert';
+import { SuppressLocalAudioPlaybackAlert } from './suppress-local-audio-playback-alert';
+import { SupressionHelp } from './supression-help';
 
 const DEFAULT_NAME = 'default';
 
 const Devices = memo(() => {
+  const { t } = useTranslation('settings');
   const currentVoiceChannelId = useCurrentVoiceChannelId();
   const settings = usePublicServerSettings();
   const ownVoiceState = useOwnVoiceState();
   const {
+    devices,
+    saveDevices,
+    loading: devicesLoading,
     inputDevices,
     playbackDevices,
     videoDevices,
-    loading: availableDevicesLoading,
     loadDevices
-  } = useAvailableDevices();
-  const { devices, saveDevices, loading: devicesLoading } = useDevices();
-  const { values, onChange } = useForm(devices);
+  } = useDevices();
+  const { values, onChange, setValues } = useForm(devices);
+  const noiseGateWorkletAvailability = useSyncExternalStore(
+    subscribeNoiseGateWorkletAvailability,
+    getNoiseGateWorkletAvailabilitySnapshot,
+    getNoiseGateWorkletAvailabilitySnapshot
+  );
+  const isNoiseGateAvailable = noiseGateWorkletAvailability.available;
+  const isRestrictOwnAudioSupported = useMemo(
+    () => getRestrictOwnAudioSupport(),
+    []
+  );
+  const isSuppressLocalAudioPlaybackSupported = useMemo(
+    () => getSuppressLocalAudioPlaybackSupport(),
+    []
+  );
+
   const {
     testAudioRef,
     permissionState,
     isTesting,
-    audioLevel,
+    getAudioLevelSnapshot,
     error: microphoneTestError,
     requestPermission,
     startTest,
@@ -67,7 +104,10 @@ const Devices = memo(() => {
     playbackId: values.playbackId,
     autoGainControl: !!values.autoGainControl,
     echoCancellation: !!values.echoCancellation,
-    noiseSuppression: !!values.noiseSuppression
+    noiseSuppression: values.noiseSuppression,
+    noiseGateEnabled: !!values.noiseGateEnabled,
+    noiseGateThresholdDb:
+      values.noiseGateThresholdDb ?? MICROPHONE_GATE_DEFAULT_THRESHOLD_DB
   });
   const {
     testVideoRef,
@@ -85,8 +125,8 @@ const Devices = memo(() => {
 
   const saveDeviceSettings = useCallback(() => {
     saveDevices(values);
-    toast.success('Device settings saved');
-  }, [saveDevices, values]);
+    toast.success(t('deviceSettingsSaved'));
+  }, [saveDevices, values, t]);
   const didPrimeDevicesOnGrantedRef = useRef(false);
   const mutedByTestRef = useRef<{
     previousMicMuted: boolean;
@@ -109,13 +149,13 @@ const Devices = memo(() => {
 
     const voiceControlsBridge = getVoiceControlsBridge();
     if (!voiceControlsBridge) {
-      toast.error('Voice controls are unavailable right now.');
+      toast.error(t('voiceControlsUnavailable'));
       return;
     }
 
     await voiceControlsBridge.setMicMuted(mutedByTest.previousMicMuted);
     await voiceControlsBridge.setSoundMuted(mutedByTest.previousSoundMuted);
-  }, [currentVoiceChannelId]);
+  }, [currentVoiceChannelId, t]);
 
   useEffect(() => {
     restoreVoiceStateAfterTestRef.current = restoreVoiceStateAfterTest;
@@ -125,7 +165,7 @@ const Devices = memo(() => {
     if (currentVoiceChannelId) {
       const voiceControlsBridge = getVoiceControlsBridge();
       if (!voiceControlsBridge) {
-        toast.error('Voice controls are unavailable right now.');
+        toast.error(t('voiceControlsUnavailable'));
         return;
       }
 
@@ -151,7 +191,8 @@ const Devices = memo(() => {
     ownVoiceState.micMuted,
     ownVoiceState.soundMuted,
     startTest,
-    restoreVoiceStateAfterTest
+    restoreVoiceStateAfterTest,
+    t
   ]);
 
   const stopMicrophoneTest = useCallback(async () => {
@@ -199,62 +240,56 @@ const Devices = memo(() => {
   const hasDefaultVideoOption = videoDevices.some(
     (device) => device?.deviceId === DEFAULT_NAME
   );
-  // Meter is linear from -60 dB..0 dB to 0..100%.
-  // Color intensity mirrors the speaking-indicator glow levels.
-  const meterFillColorClass =
-    audioLevel >= 66
-      ? 'bg-green-600'
-      : audioLevel >= 33
-        ? 'bg-green-500'
-        : 'bg-green-300';
 
   const maxBitrate = useMemo(
     () => (settings?.webRtcMaxBitrate ? settings.webRtcMaxBitrate / 1000 : 0),
     [settings?.webRtcMaxBitrate]
   );
 
-  if (availableDevicesLoading || devicesLoading) {
+  useEffect(() => {
+    setValues(devices);
+  }, [devices, setValues]);
+
+  if (devicesLoading) {
     return <LoadingCard className="h-[600px]" />;
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Devices</CardTitle>
-        <CardDescription>
-          Manage your peripheral devices and their settings.
-        </CardDescription>
+        <CardTitle>{t('devicesTitle')}</CardTitle>
+        <CardDescription>{t('devicesDesc')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {currentVoiceChannelId && (
           <Alert variant="default">
             <Info />
-            <AlertDescription>
-              You are in a voice channel, changes will only take effect after
-              you leave and rejoin the channel.
-            </AlertDescription>
+            <AlertDescription>{t('voiceChannelActiveInfo')}</AlertDescription>
           </Alert>
         )}
         <div className="space-y-6">
-          <Group label="Playback">
+          <Group label={t('playbackLabel')}>
             <Select
               onValueChange={(value) => onChange('playbackId', value)}
               value={values.playbackId}
+              disabled={playbackDevices.length === 0}
             >
               <SelectTrigger className="w-92">
-                <SelectValue placeholder="Select the output device" />
+                <SelectValue placeholder={t('playbackPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
                   {!hasDefaultPlaybackOption && (
-                    <SelectItem value={DEFAULT_NAME}>Default Output</SelectItem>
+                    <SelectItem value={DEFAULT_NAME}>
+                      {t('defaultOutput')}
+                    </SelectItem>
                   )}
                   {playbackDevices.map((device) => (
                     <SelectItem
                       key={device?.deviceId}
                       value={device?.deviceId || DEFAULT_NAME}
                     >
-                      {device?.label.trim() || 'Default Output'}
+                      {device?.label.trim() || t('defaultOutput')}
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -262,13 +297,14 @@ const Devices = memo(() => {
             </Select>
           </Group>
 
-          <Group label="Microphone">
+          <Group label={t('microphoneLabel')}>
             <Select
               onValueChange={(value) => onChange('microphoneId', value)}
               value={values.microphoneId}
+              disabled={inputDevices.length === 0}
             >
               <SelectTrigger className="w-92">
-                <SelectValue placeholder="Select the input device" />
+                <SelectValue placeholder={t('microphonePlaceholder')} />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
@@ -277,15 +313,48 @@ const Devices = memo(() => {
                       key={device?.deviceId}
                       value={device?.deviceId || DEFAULT_NAME}
                     >
-                      {device?.label.trim() || 'Default Microphone'}
+                      {device?.label.trim() || t('defaultMicrophone')}
                     </SelectItem>
                   ))}
                 </SelectGroup>
               </SelectContent>
             </Select>
 
+            <Group
+              label={t('noiseSuppressionLabel')}
+              className="my-4"
+              help={<SupressionHelp />}
+            >
+              <Select
+                value={values.noiseSuppression}
+                onValueChange={(value) =>
+                  onChange('noiseSuppression', value as NoiseSuppression)
+                }
+              >
+                <SelectTrigger className="w-92">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value={NoiseSuppression.NONE}>
+                      {t('noiseSuppressionNone')}
+                    </SelectItem>
+                    <SelectItem value={NoiseSuppression.STANDARD}>
+                      {t('standard')}
+                    </SelectItem>
+                    <SelectItem value={NoiseSuppression.RNNOISE}>
+                      RNNoise ({t('experimental')})
+                    </SelectItem>
+                    <SelectItem value={NoiseSuppression.DTLN}>
+                      DTLN ({t('experimental')})
+                    </SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Group>
+
             <div className="flex items-center gap-4">
-              <Group label="Echo cancellation">
+              <Group label={t('echoCancellationLabel')}>
                 <Switch
                   checked={!!values.echoCancellation}
                   onCheckedChange={(checked) =>
@@ -294,16 +363,7 @@ const Devices = memo(() => {
                 />
               </Group>
 
-              <Group label="Noise suppression">
-                <Switch
-                  checked={!!values.noiseSuppression}
-                  onCheckedChange={(checked) =>
-                    onChange('noiseSuppression', checked)
-                  }
-                />
-              </Group>
-
-              <Group label="Automatic gain control">
+              <Group label={t('autoGainControlLabel')}>
                 <Switch
                   checked={!!values.autoGainControl}
                   onCheckedChange={(checked) =>
@@ -311,14 +371,33 @@ const Devices = memo(() => {
                   }
                 />
               </Group>
+
+              <Group label={t('noiseGateLabel')}>
+                <Switch
+                  checked={values.noiseGateEnabled}
+                  disabled={!isNoiseGateAvailable}
+                  onCheckedChange={(checked) =>
+                    onChange('noiseGateEnabled', checked)
+                  }
+                />
+              </Group>
             </div>
+
+            {!isNoiseGateAvailable && (
+              <p className="text-xs text-muted-foreground">
+                {t('noiseGateUnavailable')}
+                {noiseGateWorkletAvailability.reason
+                  ? ` ${noiseGateWorkletAvailability.reason}`
+                  : ''}
+              </p>
+            )}
           </Group>
 
-          <Group label="Microphone Test">
+          <Group label={t('microphoneTestLabel')}>
             <div className="flex items-center gap-2">
               {permissionState !== 'granted' && (
                 <Button variant="outline" onClick={requestMicrophonePermission}>
-                  Permit Microphone Access
+                  {t('permitMicAccess')}
                 </Button>
               )}
 
@@ -328,31 +407,34 @@ const Devices = memo(() => {
                   onClick={() => void startMicrophoneTest()}
                   disabled={permissionState === 'denied' || !hasMicrophones}
                 >
-                  Start Test
+                  {t('startTestBtn')}
                 </Button>
               ) : (
                 <Button
                   variant="secondary"
                   onClick={() => void stopMicrophoneTest()}
                 >
-                  Stop Test
+                  {t('stopTestBtn')}
                 </Button>
               )}
             </div>
 
             {currentVoiceChannelId && isTesting && (
               <p className="text-sm text-muted-foreground">
-                You are temporarily muted and deafened while the test is
-                running.
+                {t('mutedDuringTest')}
               </p>
             )}
 
-            <div className="relative h-6 w-full max-w-120 overflow-hidden rounded-full bg-muted">
-              <div
-                className={`h-full ${meterFillColorClass} transition-[width,background-color] duration-75`}
-                style={{ width: `${audioLevel}%` }}
-              />
-            </div>
+            <MicrophoneTestLevelBar
+              isTesting={isTesting}
+              noiseGateEnabled={values.noiseGateEnabled}
+              noiseGateControlsDisabled={!isNoiseGateAvailable}
+              noiseGateThresholdDb={values.noiseGateThresholdDb}
+              onThresholdChange={(value) =>
+                onChange('noiseGateThresholdDb', value)
+              }
+              getAudioLevelSnapshot={getAudioLevelSnapshot}
+            />
 
             {microphoneTestError && (
               <Alert variant="destructive">
@@ -368,20 +450,20 @@ const Devices = memo(() => {
         <Separator />
 
         <div className="space-y-6">
-          <Group label="Webcam">
+          <Group label={t('webcamLabel')}>
             <div className="space-y-4">
               <Select
                 onValueChange={(value) => onChange('webcamId', value)}
                 value={values.webcamId}
               >
                 <SelectTrigger className="w-full max-w-96">
-                  <SelectValue placeholder="Select the input device" />
+                  <SelectValue placeholder={t('webcamPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
                     {!hasDefaultVideoOption && (
                       <SelectItem value={DEFAULT_NAME}>
-                        Default Webcam
+                        {t('defaultWebcam')}
                       </SelectItem>
                     )}
                     {videoDevices.map((device) => (
@@ -389,7 +471,7 @@ const Devices = memo(() => {
                         key={device?.deviceId}
                         value={device?.deviceId || DEFAULT_NAME}
                       >
-                        {device?.label.trim() || 'Default Webcam'}
+                        {device?.label.trim() || t('defaultWebcam')}
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -413,7 +495,7 @@ const Devices = memo(() => {
                       variant="secondary"
                       onClick={() => void startWebcamTest()}
                     >
-                      Start Video Preview
+                      {t('startVideoPreviewBtn')}
                     </Button>
                   </div>
                 )}
@@ -421,7 +503,7 @@ const Devices = memo(() => {
                 {(isVideoStarting ||
                   (isVideoTesting && !isVideoPreviewReady)) && (
                   <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
-                    Starting camera...
+                    {t('startingCamera')}
                   </div>
                 )}
 
@@ -432,7 +514,7 @@ const Devices = memo(() => {
                       className="pointer-events-auto"
                       onClick={stopVideoTest}
                     >
-                      Stop Video Preview
+                      {t('stopVideoPreviewBtn')}
                     </Button>
                   </div>
                 )}
@@ -456,7 +538,7 @@ const Devices = memo(() => {
                 }
               />
 
-              <Group label="Mirror own video">
+              <Group label={t('mirrorOwnVideoLabel')}>
                 <Switch
                   checked={!!values.mirrorOwnVideo}
                   onCheckedChange={(checked) =>
@@ -465,7 +547,7 @@ const Devices = memo(() => {
                 />
               </Group>
 
-              <Group label="Screen Sharing">
+              <Group label={t('screenSharingLabel')}>
                 <div className="flex">
                   <ResolutionFpsControl
                     framerate={values.screenFramerate}
@@ -486,7 +568,9 @@ const Devices = memo(() => {
                       }
                     >
                       <SelectTrigger className="w-40">
-                        <SelectValue placeholder="Select codec" />
+                        <SelectValue
+                          placeholder={t('selectCodecPlaceholder')}
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
@@ -502,7 +586,7 @@ const Devices = memo(() => {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <Label>Max Bitrate</Label>
+                  <Label>{t('maxBitrateLabel')}</Label>
 
                   <Slider
                     className="max-w-96"
@@ -527,14 +611,46 @@ const Devices = memo(() => {
                   />
                 </div>
 
+                <Group
+                  label={t('restrictOwnAudioLabel')}
+                  description={t('restrictOwnAudioDesc')}
+                >
+                  {isRestrictOwnAudioSupported ? (
+                    <Switch
+                      checked={!!values.restrictOwnAudio}
+                      disabled={!isRestrictOwnAudioSupported}
+                      onCheckedChange={(checked) =>
+                        onChange('restrictOwnAudio', checked)
+                      }
+                    />
+                  ) : (
+                    <RestrictOwnAudioAlert
+                      isSupported={isRestrictOwnAudioSupported}
+                    />
+                  )}
+                </Group>
+
+                <Group
+                  label={t('suppressLocalAudioPlaybackLabel')}
+                  description={t('suppressLocalAudioPlaybackDesc')}
+                >
+                  {isSuppressLocalAudioPlaybackSupported ? (
+                    <Switch
+                      checked={!!values.suppressLocalAudioPlayback}
+                      disabled={!isSuppressLocalAudioPlaybackSupported}
+                      onCheckedChange={(checked) =>
+                        onChange('suppressLocalAudioPlayback', checked)
+                      }
+                    />
+                  ) : (
+                    <SuppressLocalAudioPlaybackAlert
+                      isSupported={isSuppressLocalAudioPlaybackSupported}
+                    />
+                  )}
+                </Group>
+
                 <span className="text-sm text-muted-foreground">
-                  These screen sharing settings are best effort and may not be
-                  supported on all platforms or browsers, which means that in
-                  some cases the actual resolution, framerate or codec used may
-                  differ from the selected ones. In the end, is up to the
-                  browser to handle the screen sharing stream in the best way
-                  possible, based on the current system performance and network
-                  conditions.
+                  {t('screenSharingNote')}
                 </span>
               </Group>
             </div>
@@ -542,9 +658,9 @@ const Devices = memo(() => {
         </div>
         <div className="flex justify-end gap-2 pt-4">
           <Button variant="outline" onClick={closeServerScreens}>
-            Cancel
+            {t('cancel')}
           </Button>
-          <Button onClick={saveDeviceSettings}>Save Changes</Button>
+          <Button onClick={saveDeviceSettings}>{t('saveChanges')}</Button>
         </div>
       </CardContent>
     </Card>

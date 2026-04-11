@@ -13,13 +13,17 @@ const getStorageSettingsRoute = protectedProcedure.query(async ({ ctx }) => {
 
   const storageSettings: TStorageSettings = {
     storageUploadEnabled: settings.storageUploadEnabled,
+    storageFileSharingInDirectMessages:
+      settings.storageFileSharingInDirectMessages,
     storageQuota: settings.storageQuota,
     storageUploadMaxFileSize: settings.storageUploadMaxFileSize,
     storageMaxAvatarSize: settings.storageMaxAvatarSize,
     storageMaxBannerSize: settings.storageMaxBannerSize,
     storageMaxFilesPerMessage: settings.storageMaxFilesPerMessage,
     storageSpaceQuotaByUser: settings.storageSpaceQuotaByUser,
-    storageOverflowAction: settings.storageOverflowAction
+    storageOverflowAction: settings.storageOverflowAction,
+    storageSignedUrlsEnabled: settings.storageSignedUrlsEnabled,
+    storageSignedUrlsTtlSeconds: settings.storageSignedUrlsTtlSeconds
   };
 
   return { storageSettings, diskMetrics };

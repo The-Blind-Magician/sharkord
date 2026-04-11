@@ -1,8 +1,10 @@
+import { logDebug } from '@/helpers/browser-logger';
 import { getTRPCClient } from '@/lib/trpc';
 import {
   processPluginComponents,
   setPluginCommands,
-  setPluginComponents
+  setPluginComponents,
+  setPluginsMetadata
 } from './actions';
 
 const subscribeToPlugins = () => {
@@ -11,7 +13,10 @@ const subscribeToPlugins = () => {
   const onCommandsChangeSub = trpc.plugins.onCommandsChange.subscribe(
     undefined,
     {
-      onData: (data) => setPluginCommands(data),
+      onData: (data) => {
+        logDebug('[EVENTS] plugins.onCommandsChange', { data });
+        setPluginCommands(data);
+      },
       onError: (err) =>
         console.error('onCommandsChange subscription error:', err)
     }
@@ -23,6 +28,7 @@ const subscribeToPlugins = () => {
       onData: async (data) => {
         const components = await processPluginComponents(data);
 
+        logDebug('[EVENTS] plugins.onComponentsChange', { data, components });
         setPluginComponents(components);
       },
       onError: (err) =>
@@ -30,9 +36,22 @@ const subscribeToPlugins = () => {
     }
   );
 
+  const onMetadataChangeSub = trpc.plugins.onMetadataChange.subscribe(
+    undefined,
+    {
+      onData: (data) => {
+        logDebug('[EVENTS] plugins.onMetadataChange', { data });
+        setPluginsMetadata(data);
+      },
+      onError: (err) =>
+        console.error('onMetadataChange subscription error:', err)
+    }
+  );
+
   return () => {
     onCommandsChangeSub.unsubscribe();
     onComponentsChangeSub.unsubscribe();
+    onMetadataChangeSub.unsubscribe();
   };
 };
 

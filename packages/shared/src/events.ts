@@ -42,10 +42,13 @@ export enum ServerEvents {
   PLUGIN_LOG = 'pluginLog',
   PLUGIN_COMMANDS_CHANGE = 'pluginCommandsChange',
   PLUGIN_COMPONENTS_CHANGE = 'pluginComponentsChange',
+  PLUGIN_METADATA_CHANGE = 'pluginMetadataChange',
 
   CATEGORY_CREATE = 'categoryCreate',
   CATEGORY_UPDATE = 'categoryUpdate',
-  CATEGORY_DELETE = 'categoryDelete'
+  CATEGORY_DELETE = 'categoryDelete',
+
+  DM_CONVERSATION_OPEN = 'dmConversationOpen'
 }
 
 export type TNewMessage = {

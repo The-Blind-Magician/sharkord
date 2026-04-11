@@ -8,6 +8,7 @@ import {
   STORAGE_DEFAULT_MAX_AVATAR_SIZE,
   STORAGE_DEFAULT_MAX_BANNER_SIZE,
   STORAGE_DEFAULT_MAX_FILES_PER_MESSAGE,
+  STORAGE_DEFAULT_SIGNED_URLS_TTL_SECONDS,
   STORAGE_MAX_FILE_SIZE,
   STORAGE_MAX_QUOTA_PER_USER,
   STORAGE_OVERFLOW_ACTION,
@@ -44,8 +45,12 @@ export const useAdminGeneral = () => {
     name: '',
     description: '',
     password: '',
+    onlyAskForPasswordOnFirstJoin: false,
     allowNewUsers: false,
-    enablePlugins: false
+    directMessagesEnabled: true,
+    enablePlugins: false,
+    enableSearch: true,
+    showWelcomeDialog: true
   });
   const [logo, setLogo] = useState<TFile | null>(null);
 
@@ -59,8 +64,13 @@ export const useAdminGeneral = () => {
       name: settings.name,
       description: settings.description ?? '',
       password: settings.password ?? '',
+      onlyAskForPasswordOnFirstJoin:
+        settings.onlyAskForPasswordOnFirstJoin ?? false,
       allowNewUsers: settings.allowNewUsers ?? false,
-      enablePlugins: settings.enablePlugins ?? false
+      directMessagesEnabled: settings.directMessagesEnabled ?? true,
+      enablePlugins: settings.enablePlugins ?? false,
+      enableSearch: settings.enableSearch ?? true,
+      showWelcomeDialog: settings.showWelcomeDialog ?? true
     });
     setLoading(false);
     setLogo(settings.logo);
@@ -74,8 +84,12 @@ export const useAdminGeneral = () => {
         name: settings.name,
         description: settings.description,
         password: settings.password || undefined,
+        onlyAskForPasswordOnFirstJoin: settings.onlyAskForPasswordOnFirstJoin,
         allowNewUsers: settings.allowNewUsers,
-        enablePlugins: settings.enablePlugins
+        directMessagesEnabled: settings.directMessagesEnabled,
+        enablePlugins: settings.enablePlugins,
+        enableSearch: settings.enableSearch,
+        showWelcomeDialog: settings.showWelcomeDialog
       });
       toast.success('Settings updated');
     } catch (error) {
@@ -426,12 +440,15 @@ export const useAdminStorage = () => {
     useForm<TStorageSettings>({
       storageOverflowAction: STORAGE_OVERFLOW_ACTION,
       storageSpaceQuotaByUser: STORAGE_MAX_QUOTA_PER_USER,
+      storageFileSharingInDirectMessages: true,
       storageUploadEnabled: true,
       storageUploadMaxFileSize: STORAGE_MAX_FILE_SIZE,
       storageMaxAvatarSize: STORAGE_DEFAULT_MAX_AVATAR_SIZE,
       storageMaxBannerSize: STORAGE_DEFAULT_MAX_BANNER_SIZE,
       storageMaxFilesPerMessage: STORAGE_DEFAULT_MAX_FILES_PER_MESSAGE,
-      storageQuota: STORAGE_QUOTA
+      storageQuota: STORAGE_QUOTA,
+      storageSignedUrlsEnabled: false,
+      storageSignedUrlsTtlSeconds: STORAGE_DEFAULT_SIGNED_URLS_TTL_SECONDS
     });
   const [diskMetrics, setDiskMetrics] = useState<TDiskMetrics | undefined>(
     undefined
@@ -455,6 +472,8 @@ export const useAdminStorage = () => {
     try {
       await trpc.others.updateSettings.mutate({
         storageUploadEnabled: values.storageUploadEnabled,
+        storageFileSharingInDirectMessages:
+          values.storageFileSharingInDirectMessages,
         storageQuota: values.storageQuota,
         storageUploadMaxFileSize: values.storageUploadMaxFileSize,
         storageMaxAvatarSize: values.storageMaxAvatarSize,
@@ -462,7 +481,9 @@ export const useAdminStorage = () => {
         storageMaxFilesPerMessage: values.storageMaxFilesPerMessage,
         storageSpaceQuotaByUser: values.storageSpaceQuotaByUser,
         storageOverflowAction:
-          values.storageOverflowAction as StorageOverflowAction
+          values.storageOverflowAction as StorageOverflowAction,
+        storageSignedUrlsEnabled: values.storageSignedUrlsEnabled,
+        storageSignedUrlsTtlSeconds: values.storageSignedUrlsTtlSeconds
       });
       toast.success('Storage settings updated');
     } catch (error) {

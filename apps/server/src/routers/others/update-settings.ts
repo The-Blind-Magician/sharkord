@@ -17,8 +17,11 @@ const updateSettingsRoute = protectedProcedure
       name: z.string().min(2).max(24).optional(),
       description: z.string().max(128).optional(),
       password: z.string().min(1).max(32).optional().nullable().default(null),
+      onlyAskForPasswordOnFirstJoin: z.boolean().optional(),
       allowNewUsers: z.boolean().optional(),
+      directMessagesEnabled: z.boolean().optional(),
       storageUploadEnabled: z.boolean().optional(),
+      storageFileSharingInDirectMessages: z.boolean().optional(),
       storageQuota: z.number().min(0).optional(),
       storageUploadMaxFileSize: z.number().min(0).optional(),
       storageMaxAvatarSize: z.number().min(0).optional(),
@@ -26,7 +29,11 @@ const updateSettingsRoute = protectedProcedure
       storageMaxFilesPerMessage: z.number().int().min(0).optional(),
       storageSpaceQuotaByUser: z.number().min(0).optional(),
       storageOverflowAction: z.enum(StorageOverflowAction).optional(),
-      enablePlugins: z.boolean().optional()
+      enablePlugins: z.boolean().optional(),
+      enableSearch: z.boolean().optional(),
+      showWelcomeDialog: z.boolean().optional(),
+      storageSignedUrlsEnabled: z.boolean().optional(),
+      storageSignedUrlsTtlSeconds: z.number().int().min(0).optional()
     })
   )
   .mutation(async ({ input, ctx }) => {
@@ -38,8 +45,12 @@ const updateSettingsRoute = protectedProcedure
       name: input.name,
       description: input.description,
       password: input.password,
+      onlyAskForPasswordOnFirstJoin: input.onlyAskForPasswordOnFirstJoin,
       allowNewUsers: input.allowNewUsers,
+      directMessagesEnabled: input.directMessagesEnabled,
       storageUploadEnabled: input.storageUploadEnabled,
+      storageFileSharingInDirectMessages:
+        input.storageFileSharingInDirectMessages,
       storageQuota: input.storageQuota,
       storageUploadMaxFileSize: input.storageUploadMaxFileSize,
       storageMaxAvatarSize: input.storageMaxAvatarSize,
@@ -47,7 +58,11 @@ const updateSettingsRoute = protectedProcedure
       storageMaxFilesPerMessage: input.storageMaxFilesPerMessage,
       storageSpaceQuotaByUser: input.storageSpaceQuotaByUser,
       storageOverflowAction: input.storageOverflowAction,
-      enablePlugins: input.enablePlugins
+      enablePlugins: input.enablePlugins,
+      enableSearch: input.enableSearch,
+      showWelcomeDialog: input.showWelcomeDialog,
+      storageSignedUrlsEnabled: input.storageSignedUrlsEnabled,
+      storageSignedUrlsTtlSeconds: input.storageSignedUrlsTtlSeconds
     });
 
     if (oldEnablePlugins !== input.enablePlugins) {

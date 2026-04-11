@@ -1,9 +1,11 @@
 import {
   setHideNonVideoParticipants,
+  setHideOwnScreenShare,
   setShowUserBannersInVoice
 } from '@/features/server/voice/actions';
 import {
   useHideNonVideoParticipants,
+  useHideOwnScreenShare,
   useShowUserBannersInVoice
 } from '@/features/server/voice/hooks';
 import {
@@ -16,10 +18,13 @@ import {
 } from '@sharkord/ui';
 import { Settings } from 'lucide-react';
 import { memo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const VoiceOptionsController = memo(() => {
+  const { t } = useTranslation('topbar');
   const hideNonVideoParticipants = useHideNonVideoParticipants();
   const showUserBanners = useShowUserBannersInVoice();
+  const hideOwnScreenShare = useHideOwnScreenShare();
 
   const handleToggleHideNonVideo = useCallback((checked: boolean) => {
     setHideNonVideoParticipants(checked);
@@ -27,6 +32,10 @@ const VoiceOptionsController = memo(() => {
 
   const handleToggleShowUserBanners = useCallback((checked: boolean) => {
     setShowUserBannersInVoice(checked);
+  }, []);
+
+  const handleToggleHideOwnScreenShare = useCallback((checked: boolean) => {
+    setHideOwnScreenShare(checked);
   }, []);
 
   return (
@@ -37,7 +46,7 @@ const VoiceOptionsController = memo(() => {
           size="sm"
           className="h-6 px-2 transition-all duration-200 ease-in-out"
         >
-          <Tooltip content="Voice Options" asChild={false}>
+          <Tooltip content={t('voiceOptions')} asChild={false}>
             <Settings className="w-4 h-4" />
           </Tooltip>
         </Button>
@@ -45,7 +54,7 @@ const VoiceOptionsController = memo(() => {
       <PopoverContent align="end" className="w-80">
         <div className="space-y-3">
           <h4 className="font-medium text-sm cursor-default mb-3">
-            Voice Options
+            {t('voiceOptions')}
           </h4>
 
           <div className="flex items-center justify-between space-x-3">
@@ -55,14 +64,12 @@ const VoiceOptionsController = memo(() => {
               }
               className="text-sm text-foreground cursor-pointer select-none flex-1"
             >
-              Hide non-video participants
+              {t('hideNonVideoParticipants')}
             </span>
             <Switch
               id="hide-non-video"
               checked={hideNonVideoParticipants}
               onCheckedChange={handleToggleHideNonVideo}
-              data-1p-ignore
-              data-lpignore="true"
             />
           </div>
 
@@ -71,14 +78,28 @@ const VoiceOptionsController = memo(() => {
               onClick={() => handleToggleShowUserBanners(!showUserBanners)}
               className="text-sm text-foreground cursor-pointer select-none flex-1"
             >
-              Display user banners
+              {t('displayUserBanners')}
             </span>
             <Switch
               id="show-user-banners"
               checked={showUserBanners}
               onCheckedChange={handleToggleShowUserBanners}
-              data-1p-ignore
-              data-lpignore="true"
+            />
+          </div>
+
+          <div className="flex items-center justify-between space-x-3">
+            <span
+              onClick={() =>
+                handleToggleHideOwnScreenShare(!hideOwnScreenShare)
+              }
+              className="text-sm text-foreground cursor-pointer select-none flex-1"
+            >
+              {t('hideOwnScreenShare')}
+            </span>
+            <Switch
+              id="hide-own-screen-share"
+              checked={hideOwnScreenShare}
+              onCheckedChange={handleToggleHideOwnScreenShare}
             />
           </div>
         </div>

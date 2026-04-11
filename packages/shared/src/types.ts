@@ -35,14 +35,19 @@ export type TPublicServerSettings = Pick<
   | 'description'
   | 'serverId'
   | 'storageUploadEnabled'
+  | 'directMessagesEnabled'
   | 'storageQuota'
   | 'storageUploadMaxFileSize'
+  | 'storageFileSharingInDirectMessages'
   | 'storageMaxAvatarSize'
   | 'storageMaxBannerSize'
   | 'storageMaxFilesPerMessage'
   | 'storageSpaceQuotaByUser'
   | 'storageOverflowAction'
   | 'enablePlugins'
+  | 'enableSearch'
+  | 'showWelcomeDialog'
+  | 'storageSignedUrlsEnabled'
 > & {
   webRtcMaxBitrate: number;
 };
@@ -99,6 +104,22 @@ export type TServerInfo = Pick<
   version: string;
 };
 
+export type TWebAppManifest = {
+  name: string;
+  short_name: string;
+  description: string;
+  start_url: string;
+  display: string;
+  background_color: string;
+  theme_color: string;
+  icons: Array<{
+    src: string;
+    sizes: string;
+    type: string;
+    purpose?: string;
+  }>;
+};
+
 export type TArtifact = {
   name: string;
   target: string;
@@ -132,3 +153,10 @@ export type TChannelUserPermissionsMap = Record<
 >;
 
 export type TReadStateMap = Record<number, number>;
+
+export type TDirectMessageConversation = {
+  channelId: number;
+  userId: number;
+  unreadCount: number;
+  lastMessageAt: number;
+};

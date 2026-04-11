@@ -5,7 +5,7 @@ import {
   type TJoinedUser
 } from '@sharkord/shared';
 import chalk from 'chalk';
-import { eq, sql } from 'drizzle-orm';
+import { eq, isNull, max, sql } from 'drizzle-orm';
 import http from 'http';
 import jwt from 'jsonwebtoken';
 import z from 'zod';
@@ -16,7 +16,13 @@ import { isInviteValid } from '../db/queries/invites';
 import { getDefaultRole } from '../db/queries/roles';
 import { getServerToken, getSettings } from '../db/queries/server';
 import { getUserByIdentity } from '../db/queries/users';
-import { invites, userRoles, users } from '../db/schema';
+import {
+  channelReadStates,
+  invites,
+  messages,
+  userRoles,
+  users
+} from '../db/schema';
 import { getWsInfo } from '../helpers/get-ws-info';
 import { safeCompare } from '../helpers/safe-compare';
 import { logger } from '../logger';
@@ -31,8 +37,15 @@ import { getJsonBody } from './helpers';
 import { HttpValidationError } from './utils';
 
 const zBody = z.object({
-  identity: z.string().trim().min(1, 'Identity is required'),
-  password: z.string().min(4, 'Password is required').max(128),
+  identity: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1, 'Identity must be at least 1 character long'),
+  password: z
+    .string()
+    .min(4, 'Password must be at least 4 characters long')
+    .max(128),
   invite: z.string().optional()
 });
 
@@ -57,10 +70,12 @@ const registerUser = async (
     message: 'Default role not found'
   });
 
+  const randomNum = Math.floor(Math.random() * 99999) + 10000; // between 10000 and 99999 to ensure it's always 5 digits, for better readability
+
   const user = await db
     .insert(users)
     .values({
-      name: 'SharkordUser',
+      name: `SharkordUser${randomNum}`,
       identity,
       createdAt: Date.now(),
       password: hashedPassword
@@ -172,6 +187,30 @@ const loginRouteHandler = async (
       inviteRoleId,
       connectionInfo?.ip
     );
+
+    // mark all existing messages as read so the new user doesn't see
+    // a flood of unread messages on first join
+    const latestMessagePerChannel = await db
+      .select({
+        channelId: messages.channelId,
+        latestMessageId: max(messages.id)
+      })
+      .from(messages)
+      .where(isNull(messages.parentMessageId))
+      .groupBy(messages.channelId);
+
+    const readStateValues = latestMessagePerChannel
+      .filter((row) => row.latestMessageId !== null)
+      .map((row) => ({
+        channelId: row.channelId,
+        userId: existingUser!.id,
+        lastReadMessageId: row.latestMessageId!,
+        lastReadAt: Date.now()
+      }));
+
+    if (readStateValues.length > 0) {
+      await db.insert(channelReadStates).values(readStateValues);
+    }
   }
 
   if (existingUser.banned) {

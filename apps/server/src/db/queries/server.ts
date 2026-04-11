@@ -8,7 +8,17 @@ import { files, settings } from '../schema';
 let token: string;
 
 const getSettings = async (): Promise<TJoinedSettings> => {
-  const serverSettings = await db.select().from(settings).get()!;
+  const serverSettings = await db.select().from(settings).get();
+
+  if (!serverSettings) {
+    throw new Error(
+      'Server settings not found in database. Something is wrong.'
+    );
+  }
+
+  if (!token && serverSettings.secretToken) {
+    token = serverSettings.secretToken;
+  }
 
   const logo = serverSettings.logoId
     ? await db
@@ -32,15 +42,21 @@ const getPublicSettings: () => Promise<TPublicServerSettings> = async () => {
     name: settings.name,
     serverId: settings.serverId,
     storageUploadEnabled: settings.storageUploadEnabled,
+    directMessagesEnabled: settings.directMessagesEnabled,
     storageQuota: settings.storageQuota,
     storageUploadMaxFileSize: settings.storageUploadMaxFileSize,
+    storageFileSharingInDirectMessages:
+      settings.storageFileSharingInDirectMessages,
     storageMaxAvatarSize: settings.storageMaxAvatarSize,
     storageMaxBannerSize: settings.storageMaxBannerSize,
     storageMaxFilesPerMessage: settings.storageMaxFilesPerMessage,
     storageSpaceQuotaByUser: settings.storageSpaceQuotaByUser,
     storageOverflowAction: settings.storageOverflowAction,
     enablePlugins: settings.enablePlugins,
-    webRtcMaxBitrate: config.webRtc.maxBitrate
+    webRtcMaxBitrate: config.webRtc.maxBitrate,
+    enableSearch: settings.enableSearch,
+    showWelcomeDialog: settings.showWelcomeDialog,
+    storageSignedUrlsEnabled: settings.storageSignedUrlsEnabled
   };
 
   return publicSettings;

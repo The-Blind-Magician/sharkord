@@ -1,10 +1,12 @@
 import { useTypingUsersByThreadId } from '@/features/server/hooks';
 import { useThreadMessages } from '@/features/server/messages/hooks';
+import type { TJoinedMessage } from '@sharkord/shared';
 import { Spinner } from '@sharkord/ui';
 import { MessageSquareText } from 'lucide-react';
-import { memo } from 'react';
+import { memo, useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useScrollController } from '../channel-view/text/hooks/use-scroll-controller';
 import { MessagesGroup } from '../channel-view/text/messages-group';
-import { useScrollController } from '../channel-view/text/use-scroll-controller';
 import { ParentMessagePreview } from './parent-message-preview';
 import { ThreadCompose } from './thread-compose';
 import { ThreadHeader } from './thread-header';
@@ -16,18 +18,27 @@ type TThreadContentProps = {
 
 const ThreadContent = memo(
   ({ parentMessageId, channelId }: TThreadContentProps) => {
+    const { t } = useTranslation('common');
     const { messages, hasMore, loadMore, loading, fetching, groupedMessages } =
       useThreadMessages(parentMessageId);
+    const [replyingToMessage, setReplyingToMessage] = useState<
+      TJoinedMessage | undefined
+    >();
 
     const typingUsers = useTypingUsersByThreadId(parentMessageId);
 
-    const { containerRef, onScroll } = useScrollController({
-      messages,
-      fetching,
-      hasMore,
-      loadMore,
-      hasTypingUsers: typingUsers.length > 0
-    });
+    const { containerRef, onScroll, onAsyncContentLoaded } =
+      useScrollController({
+        messages,
+        fetching,
+        hasMore,
+        loadMore,
+        hasTypingUsers: typingUsers.length > 0
+      });
+
+    const onReplyMessageSelect = useCallback((message: TJoinedMessage) => {
+      setReplyingToMessage(message);
+    }, []);
 
     return (
       <div className="flex flex-col h-full w-full">
@@ -50,18 +61,24 @@ const ThreadContent = memo(
               <div
                 ref={containerRef}
                 onScroll={onScroll}
+                onLoadCapture={onAsyncContentLoaded}
                 className="flex-1 overflow-y-auto overflow-x-hidden p-2 animate-in fade-in duration-500"
               >
                 {messages.length === 0 && !fetching ? (
                   <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm">
                     <MessageSquareText className="h-8 w-8 mb-2 opacity-50" />
-                    <p>No replies yet</p>
-                    <p className="text-xs">Be the first to reply</p>
+                    <p>{t('noRepliesYet')}</p>
+                    <p className="text-xs">{t('beFirstToReply')}</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {groupedMessages.map((group, index) => (
-                      <MessagesGroup key={index} group={group} />
+                      <MessagesGroup
+                        key={index}
+                        group={group}
+                        onReplyMessageSelect={onReplyMessageSelect}
+                        replyTargetMessageId={replyingToMessage?.id}
+                      />
                     ))}
                   </div>
                 )}
@@ -73,6 +90,8 @@ const ThreadContent = memo(
             parentMessageId={parentMessageId}
             channelId={channelId}
             typingUsers={typingUsers}
+            replyingToMessage={replyingToMessage}
+            onCancelReply={() => setReplyingToMessage(undefined)}
           />
         </div>
       </div>

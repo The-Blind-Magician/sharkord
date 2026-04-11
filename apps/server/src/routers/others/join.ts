@@ -4,13 +4,16 @@ import { z } from 'zod';
 import { db } from '../../db';
 import {
   getAllChannelUserPermissions,
+  getChannelsForUser,
   getChannelsReadStatesForUser
 } from '../../db/queries/channels';
 import { getEmojis } from '../../db/queries/emojis';
+import { hasUserJoinedBefore } from '../../db/queries/logins';
 import { getRoles } from '../../db/queries/roles';
 import { getPublicSettings, getSettings } from '../../db/queries/server';
 import { getPublicUsers } from '../../db/queries/users';
-import { categories, channels, users } from '../../db/schema';
+import { categories, users } from '../../db/schema';
+import { shouldAskServerPassword } from '../../helpers/should-ask-server-password';
 import { logger } from '../../logger';
 import { pluginManager } from '../../plugins';
 import { eventBus } from '../../plugins/event-bus';
@@ -34,7 +37,11 @@ const joinServerRoute = rateLimitedProcedure(t.procedure, {
   .query(async ({ input, ctx }) => {
     const connectionInfo = ctx.getConnectionInfo();
     const settings = await getSettings();
-    const hasPassword = !!settings?.password;
+
+    const shouldAskForPassword = await shouldAskServerPassword(ctx.user.id, {
+      password: settings.password,
+      onlyAskForPasswordOnFirstJoin: settings.onlyAskForPasswordOnFirstJoin
+    });
 
     invariant(
       input.handshakeHash &&
@@ -46,10 +53,13 @@ const joinServerRoute = rateLimitedProcedure(t.procedure, {
       }
     );
 
-    invariant(hasPassword ? input.password === settings?.password : true, {
-      code: 'FORBIDDEN',
-      message: 'Invalid password'
-    });
+    invariant(
+      shouldAskForPassword ? input.password === settings.password : true,
+      {
+        code: 'FORBIDDEN',
+        message: 'Invalid password'
+      }
+    );
 
     invariant(ctx.user, {
       code: 'UNAUTHORIZED',
@@ -67,17 +77,23 @@ const joinServerRoute = rateLimitedProcedure(t.procedure, {
       emojis,
       channelPermissions,
       readStates,
-      publicSettings
+      publicSettings,
+      pluginsMetadata,
+      hasJoinedBefore
     ] = await Promise.all([
       db.select().from(categories),
-      db.select().from(channels),
+      getChannelsForUser(ctx.user.id), // filter channels based on permissions and DM participation
       getPublicUsers(true), // return identity to get status of already connected users
       getRoles(),
       getEmojis(),
       getAllChannelUserPermissions(ctx.user.id),
       getChannelsReadStatesForUser(ctx.user.id),
-      getPublicSettings()
+      getPublicSettings(),
+      pluginManager.getActivePluginMetadata(),
+      hasUserJoinedBefore(ctx.user.id)
     ]);
+
+    const showWelcomeDialog = settings.showWelcomeDialog && !hasJoinedBefore;
 
     const processedPublicUsers = publicUsers.map((u) => ({
       ...u,
@@ -94,7 +110,7 @@ const joinServerRoute = rateLimitedProcedure(t.procedure, {
       message: 'User not present in public users'
     });
 
-    logger.info(`%s joined the server`, ctx.user.name);
+    logger.info('%s joined the server', ctx.user.name);
 
     ctx.pubsub.publish(ServerEvents.USER_JOIN, {
       ...foundPublicUser,
@@ -140,7 +156,9 @@ const joinServerRoute = rateLimitedProcedure(t.procedure, {
       readStates,
       commands: pluginManager.getCommands(),
       pluginIdsWithComponents: pluginManager.getPluginIdsWithComponents(),
-      externalStreamsMap
+      pluginsMetadata,
+      externalStreamsMap,
+      showWelcomeDialog
     };
   });
 

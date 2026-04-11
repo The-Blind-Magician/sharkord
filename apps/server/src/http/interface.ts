@@ -1,9 +1,11 @@
+import { getErrorMessage } from '@sharkord/shared';
 import fs from 'fs';
 import http from 'http';
 import path from 'path';
 import { INTERFACE_PATH } from '../helpers/paths';
 import { logger } from '../logger';
 import { IS_DEVELOPMENT, IS_TEST } from '../utils/env';
+import { buildEtag, sendJsonError, sendNotModified } from './helpers';
 
 const interfaceRouteHandler = (
   req: http.IncomingMessage,
@@ -12,6 +14,7 @@ const interfaceRouteHandler = (
   if (IS_DEVELOPMENT && !IS_TEST) {
     res.writeHead(302, { Location: 'http://localhost:5173' });
     res.end();
+
     return res;
   }
 
@@ -28,22 +31,42 @@ const interfaceRouteHandler = (
   const basePath = path.resolve(INTERFACE_PATH);
 
   if (!requestedPath.startsWith(basePath)) {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Forbidden' }));
+    sendJsonError(res, 403, 'Forbidden');
+
     return res;
   }
 
   if (!fs.existsSync(requestedPath)) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
+    sendJsonError(res, 404, 'Not found');
+
     return res;
   }
 
   const stats = fs.statSync(requestedPath);
 
   if (stats.isDirectory()) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
+    sendJsonError(res, 404, 'Not found');
+
+    return res;
+  }
+
+  const isHashedAsset = /[-.][\da-f]{8,}\.\w+$/i.test(cleanSubPath);
+
+  const cacheControl = isHashedAsset
+    ? 'public, max-age=31536000, immutable'
+    : 'no-cache';
+
+  const etag = buildEtag(null, stats);
+  const lastModified = stats.mtime.toUTCString();
+
+  if (
+    sendNotModified(req, res, {
+      etag,
+      lastModified,
+      cacheControl,
+      mtimeMs: stats.mtimeMs
+    })
+  ) {
     return res;
   }
 
@@ -53,16 +76,19 @@ const interfaceRouteHandler = (
   fileStream.on('open', () => {
     res.writeHead(200, {
       'Content-Type': file.type,
-      'Content-Length': file.size
+      'Content-Length': file.size,
+      ETag: etag,
+      'Last-Modified': lastModified,
+      'Cache-Control': cacheControl
     });
     fileStream.pipe(res);
   });
 
   fileStream.on('error', (err) => {
-    logger.error('Error serving file:', err);
+    logger.error('Error serving file: %s', getErrorMessage(err));
+
     if (!res.headersSent) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Internal server error' }));
+      sendJsonError(res, 500, 'Internal server error');
     } else {
       res.destroy();
     }

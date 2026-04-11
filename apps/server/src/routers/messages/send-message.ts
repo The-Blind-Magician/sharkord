@@ -1,6 +1,8 @@
 import {
   ActivityLogType,
   ChannelPermission,
+  FileSaveType,
+  getPlainTextFromHtml,
   isEmptyMessage,
   Permission,
   toDomCommand
@@ -10,10 +12,10 @@ import { z } from 'zod';
 import { config } from '../../config';
 import { db } from '../../db';
 import { publishMessage, publishReplyCount } from '../../db/publishers';
+import { assertDmChannel, isDirectMessageChannel } from '../../db/queries/dms';
 import { getSettings } from '../../db/queries/server';
 import { messageFiles, messages } from '../../db/schema';
 import { getInvokerCtxFromTrpcCtx } from '../../helpers/get-invoker-ctx-from-trpc-ctx';
-import { getPlainTextFromHtml } from '../../helpers/get-plain-text-from-html';
 import { parseCommandArgs } from '../../helpers/parse-command-args';
 import { sanitizeMessageHtml } from '../../helpers/sanitize-html';
 import { pluginManager } from '../../plugins';
@@ -34,7 +36,8 @@ const sendMessageRoute = rateLimitedProcedure(protectedProcedure, {
       content: z.string(),
       channelId: z.number(),
       files: z.array(z.string()).default([]),
-      parentMessageId: z.number().optional()
+      parentMessageId: z.number().optional(),
+      replyToMessageId: z.number().optional()
     })
   )
   .mutation(async ({ input, ctx }) => {
@@ -75,12 +78,54 @@ const sendMessageRoute = rateLimitedProcedure(protectedProcedure, {
       });
     }
 
-    const { storageMaxFilesPerMessage, enablePlugins } = await getSettings();
+    if (input.replyToMessageId) {
+      const repliedMessage = await db
+        .select({
+          id: messages.id,
+          channelId: messages.channelId
+        })
+        .from(messages)
+        .where(eq(messages.id, input.replyToMessageId))
+        .limit(1)
+        .get();
+
+      invariant(repliedMessage, {
+        code: 'NOT_FOUND',
+        message: 'Reply target message not found.'
+      });
+
+      invariant(repliedMessage.channelId === input.channelId, {
+        code: 'BAD_REQUEST',
+        message: 'Reply target message must be in the same channel.'
+      });
+    }
+
+    const [settings, isDmChannel] = await Promise.all([
+      getSettings(),
+      isDirectMessageChannel(input.channelId),
+      assertDmChannel(input.channelId, ctx.userId)
+    ]);
+
+    const { storageMaxFilesPerMessage, enablePlugins } = settings;
 
     const limitedFiles = input.files.slice(
       0,
       Math.max(0, storageMaxFilesPerMessage)
     );
+
+    if (limitedFiles.length > 0) {
+      invariant(settings.storageUploadEnabled, {
+        code: 'FORBIDDEN',
+        message: 'File uploads are disabled on this server'
+      });
+
+      if (isDmChannel) {
+        invariant(settings.storageFileSharingInDirectMessages, {
+          code: 'FORBIDDEN',
+          message: 'File sharing in direct messages is disabled on this server'
+        });
+      }
+    }
 
     invariant(!isEmptyMessage(input.content) || limitedFiles.length != 0, {
       code: 'BAD_REQUEST',
@@ -98,15 +143,16 @@ const sendMessageRoute = rateLimitedProcedure(protectedProcedure, {
     let editable = true;
     let commandExecutor: ((messageId: number) => void) | undefined = undefined;
 
+    const plainText = getPlainTextFromHtml(input.content);
+
     if (enablePlugins) {
       // when plugins are enabled, need to check if the message is a command
       // this might be improved in the future with a more robust parser
-      const plainText = getPlainTextFromHtml(input.content);
       const { args, commandName } = parseCommandArgs(plainText);
       const foundCommand = pluginManager.getCommandByName(commandName);
 
       if (foundCommand) {
-        if (await ctx.hasPermission(Permission.EXECUTE_PLUGIN_COMMANDS)) {
+        if (await ctx.hasPermission(Permission.USE_PLUGINS)) {
           const argsObject: Record<string, unknown> = {};
 
           if (foundCommand.args) {
@@ -199,6 +245,7 @@ const sendMessageRoute = rateLimitedProcedure(protectedProcedure, {
         content: targetContent,
         editable,
         parentMessageId: input.parentMessageId ?? null,
+        replyToMessageId: input.replyToMessageId ?? null,
         createdAt: Date.now()
       })
       .returning()
@@ -208,7 +255,11 @@ const sendMessageRoute = rateLimitedProcedure(protectedProcedure, {
 
     if (limitedFiles.length > 0) {
       for (const tempFileId of limitedFiles) {
-        const newFile = await fileManager.saveFile(tempFileId, ctx.userId);
+        const newFile = await fileManager.saveFile(
+          tempFileId,
+          ctx.userId,
+          FileSaveType.MESSAGE
+        );
 
         await db.insert(messageFiles).values({
           messageId: message.id,
@@ -230,7 +281,9 @@ const sendMessageRoute = rateLimitedProcedure(protectedProcedure, {
       messageId: message.id,
       channelId: input.channelId,
       userId: ctx.userId,
-      content: targetContent
+      pluginId: null,
+      content: targetContent,
+      textContent: plainText
     });
 
     return message.id;

@@ -1,7 +1,7 @@
+import { openDialog } from '@/features/dialogs/actions';
 import { joinServer } from '@/features/server/actions';
 import { useForm } from '@/hooks/use-form';
 import { cleanup } from '@/lib/trpc';
-import {} from '@/types';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,6 +15,8 @@ import {
   Input
 } from '@sharkord/ui';
 import { memo, useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Dialog } from '../dialogs';
 import type { TDialogBaseProps } from '../types';
 
 type TServerPasswordDialogProps = TDialogBaseProps & {
@@ -23,6 +25,7 @@ type TServerPasswordDialogProps = TDialogBaseProps & {
 
 const ServerPasswordDialog = memo(
   ({ isOpen, close, handshakeHash }: TServerPasswordDialogProps) => {
+    const { t } = useTranslation('dialogs');
     const { r, values, setTrpcErrors, errors } = useForm({
       password: ''
     });
@@ -31,9 +34,18 @@ const ServerPasswordDialog = memo(
     const onSubmit = useCallback(async () => {
       try {
         setLoading(true);
-        await joinServer(handshakeHash, values.password);
+        const { showWelcomeDialog } = await joinServer(
+          handshakeHash,
+          values.password
+        );
 
         close();
+
+        if (showWelcomeDialog) {
+          setTimeout(() => {
+            openDialog(Dialog.WELCOME_PROFILE_SETUP);
+          }, 175);
+        }
       } catch (error) {
         setTrpcErrors(error);
       } finally {
@@ -50,10 +62,9 @@ const ServerPasswordDialog = memo(
       <AlertDialog open={isOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Enter the password</AlertDialogTitle>
+            <AlertDialogTitle>{t('serverPasswordTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              This server is password protected. Please enter the password to
-              join.
+              {t('serverPasswordDesc')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex flex-col gap-2">
@@ -67,13 +78,15 @@ const ServerPasswordDialog = memo(
             </AutoFocus>
           </div>
           <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={onCancel}>
+              {t('cancel')}
+            </AlertDialogCancel>
             <AutoFocus>
               <AlertDialogAction
                 onClick={onSubmit}
                 disabled={!values.password || loading}
               >
-                Join
+                {t('joinBtn')}
               </AlertDialogAction>
             </AutoFocus>
           </AlertDialogFooter>

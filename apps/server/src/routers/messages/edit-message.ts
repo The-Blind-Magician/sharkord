@@ -1,9 +1,14 @@
-import { Permission, isEmptyMessage } from '@sharkord/shared';
+import {
+  Permission,
+  getPlainTextFromHtml,
+  isEmptyMessage
+} from '@sharkord/shared';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { config } from '../../config';
 import { db } from '../../db';
 import { publishMessage } from '../../db/publishers';
+import { assertDmChannel } from '../../db/queries/dms';
 import { messages } from '../../db/schema';
 import { sanitizeMessageHtml } from '../../helpers/sanitize-html';
 import { eventBus } from '../../plugins/event-bus';
@@ -26,6 +31,7 @@ const editMessageRoute = rateLimitedProcedure(protectedProcedure, {
     const message = await db
       .select({
         userId: messages.userId,
+        pluginId: messages.pluginId,
         channelId: messages.channelId,
         editable: messages.editable
       })
@@ -38,6 +44,8 @@ const editMessageRoute = rateLimitedProcedure(protectedProcedure, {
       code: 'NOT_FOUND',
       message: 'Message not found'
     });
+
+    await assertDmChannel(message.channelId, ctx.userId);
 
     invariant(message.editable, {
       code: 'FORBIDDEN',
@@ -83,7 +91,9 @@ const editMessageRoute = rateLimitedProcedure(protectedProcedure, {
       messageId: input.messageId,
       channelId: message.channelId,
       userId: message.userId,
-      content: sanitizedContent
+      pluginId: message.pluginId,
+      content: sanitizedContent,
+      textContent: getPlainTextFromHtml(sanitizedContent)
     });
   });
 

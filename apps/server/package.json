@@ -1,6 +1,6 @@
 {
   "name": "@sharkord/server",
-  "version": "0.0.8",
+  "version": "0.0.18",
   "module": "src/index.ts",
   "type": "module",
   "private": true,
@@ -22,7 +22,7 @@
     "deploy": "systemctl stop sharkord && cp ./build/out/sharkord-linux-x64 /root/sharkord && rm -rf ~/.config/sharkord/interface/* && systemctl start sharkord"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.10",
+    "@types/bun": "1.3.12",
     "@types/ini": "^4.1.1",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/sanitize-html": "^2.16.0",
@@ -48,11 +48,12 @@
     "chalk": "^5.6.2",
     "cron": "^4.4.0",
     "drizzle-orm": "^0.44.5",
+    "image-size": "^2.0.2",
     "ini": "^5.0.0",
     "ipaddr.js": "^2.3.0",
     "jsonwebtoken": "^9.0.2",
     "link-preview-js": "^3.1.0",
-    "mediasoup": "^3.19.17",
+    "mediasoup": "3.19.19",
     "queue": "^7.0.0",
     "react": "^19.2.4",
     "sanitize-html": "^2.17.0",

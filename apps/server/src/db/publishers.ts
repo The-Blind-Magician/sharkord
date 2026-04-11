@@ -8,25 +8,30 @@ import { db } from '.';
 import { pluginManager } from '../plugins';
 import { pubsub } from '../utils/pubsub';
 import {
-  getAffectedUserIdsForChannel,
+  getAffectedOnlineUserIdsForChannel,
   getAllChannelUserPermissions
 } from './queries/channels';
 import { getEmojiById } from './queries/emojis';
 import { getMessage } from './queries/messages';
 import { getRole } from './queries/roles';
 import { getPublicSettings } from './queries/server';
-import { getPublicUserById } from './queries/users';
-import { categories, channels, messages } from './schema';
+import { getAllUserIds, getPublicUserById } from './queries/users';
+import { categories, channels, messages, users } from './schema';
 
 const publishMessage = async (
-  messageId: number | undefined,
-  channelId: number | undefined,
+  messageId: number,
+  channelId: number,
   type: 'create' | 'update' | 'delete'
 ) => {
-  if (!messageId || !channelId) return;
-
   if (type === 'delete') {
-    pubsub.publish(ServerEvents.MESSAGE_DELETE, {
+    const affectedUserIds = await getAffectedOnlineUserIdsForChannel(
+      channelId,
+      {
+        permission: ChannelPermission.VIEW_CHANNEL
+      }
+    );
+
+    pubsub.publishFor(affectedUserIds, ServerEvents.MESSAGE_DELETE, {
       messageId: messageId,
       channelId: channelId
     });
@@ -41,7 +46,7 @@ const publishMessage = async (
   const targetEvent =
     type === 'create' ? ServerEvents.NEW_MESSAGE : ServerEvents.MESSAGE_UPDATE;
 
-  const affectedUserIds = await getAffectedUserIdsForChannel(channelId, {
+  const affectedUserIds = await getAffectedOnlineUserIdsForChannel(channelId, {
     permission: ChannelPermission.VIEW_CHANNEL
   });
 
@@ -123,12 +128,16 @@ const publishUser = async (
 
 const publishChannel = async (
   channelId: number | undefined,
-  type: 'create' | 'update' | 'delete'
+  type: 'create' | 'update' | 'delete',
+  ensureUsersAccess = false
 ) => {
   if (!channelId) return;
 
   if (type === 'delete') {
-    pubsub.publish(ServerEvents.CHANNEL_DELETE, channelId);
+    const affectedUserIds = await getAllUserIds();
+
+    pubsub.publishFor(affectedUserIds, ServerEvents.CHANNEL_DELETE, channelId);
+
     return;
   }
 
@@ -145,7 +154,42 @@ const publishChannel = async (
       ? ServerEvents.CHANNEL_CREATE
       : ServerEvents.CHANNEL_UPDATE;
 
-  pubsub.publish(targetEvent, channel);
+  const affectedUserIds = await getAffectedOnlineUserIdsForChannel(channel.id, {
+    permission: ChannelPermission.VIEW_CHANNEL
+  });
+
+  pubsub.publishFor(affectedUserIds, targetEvent, channel);
+
+  if (ensureUsersAccess) {
+    const allUsers = await db.select().from(users).all();
+    const allUserIds = allUsers.map((u) => u.id);
+
+    // ensureUsersAccess is set to true when the private setting changed
+    // was public -> private: we need to publish delete events to users who lost access
+    // was private -> public: we need to publish create events to users who gained access
+
+    if (type === 'update') {
+      if (channel.private) {
+        // channel is now private, so send delete events to users who lost access to it
+        const lostAccessUserIds = allUsers
+          .map((u) => u.id)
+          .filter((id) => !affectedUserIds.includes(id));
+
+        if (lostAccessUserIds.length > 0) {
+          pubsub.publishFor(
+            lostAccessUserIds,
+            ServerEvents.CHANNEL_DELETE,
+            channel.id
+          );
+        }
+      } else {
+        // channel is now public, so all users should have access to it
+        // send a create event
+        // if a user already has the channel in the state it will ignore the create event, so we don't need to worry about that
+        pubsub.publishFor(allUserIds, ServerEvents.CHANNEL_CREATE, channel);
+      }
+    }
+  }
 };
 
 const publishSettings = async () => {
@@ -204,16 +248,14 @@ const publishChannelPermissions = async (affectedUserIds: number[]) => {
   }
 };
 
-const publishPluginCommands = async () => {
+const publishPlugins = async () => {
   const commands = pluginManager.getCommands();
+  const pluginIds = pluginManager.getPluginIdsWithComponents();
+  const metadata = await pluginManager.getActivePluginMetadata();
 
   pubsub.publish(ServerEvents.PLUGIN_COMMANDS_CHANGE, commands);
-};
-
-const publishPluginComponents = async () => {
-  const pluginIds = pluginManager.getPluginIdsWithComponents();
-
   pubsub.publish(ServerEvents.PLUGIN_COMPONENTS_CHANGE, pluginIds);
+  pubsub.publish(ServerEvents.PLUGIN_METADATA_CHANGE, metadata);
 };
 
 const publishReplyCount = async (
@@ -226,7 +268,11 @@ const publishReplyCount = async (
     .where(eq(messages.parentMessageId, parentMessageId))
     .get();
 
-  pubsub.publish(ServerEvents.THREAD_REPLY_COUNT_UPDATE, {
+  const affectedUserIds = await getAffectedOnlineUserIdsForChannel(channelId, {
+    permission: ChannelPermission.VIEW_CHANNEL
+  });
+
+  pubsub.publishFor(affectedUserIds, ServerEvents.THREAD_REPLY_COUNT_UPDATE, {
     messageId: parentMessageId,
     channelId,
     replyCount: replyCountRow?.count ?? 0
@@ -239,8 +285,7 @@ export {
   publishChannelPermissions,
   publishEmoji,
   publishMessage,
-  publishPluginCommands,
-  publishPluginComponents,
+  publishPlugins,
   publishReplyCount,
   publishRole,
   publishSettings,

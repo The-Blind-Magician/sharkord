@@ -1,10 +1,10 @@
+import { getErrorMessage } from '@sharkord/shared';
 import fs from 'fs/promises';
 import { parse, stringify } from 'ini';
 import z from 'zod';
 import { applyEnvOverrides } from './helpers/apply-env-overrides';
 import { deepMerge } from './helpers/deep-merge';
 import { ensureServerDirs } from './helpers/ensure-server-dirs';
-import { getErrorMessage } from './helpers/get-error-message';
 import { getPrivateIp, getPublicIp } from './helpers/network';
 import { CONFIG_INI_PATH } from './helpers/paths';
 import { IS_DEVELOPMENT } from './utils/env';
@@ -37,6 +37,10 @@ const zConfig = z.object({
     joinServer: z.object({
       maxRequests: z.coerce.number().int().positive(),
       windowMs: z.coerce.number().int().positive()
+    }),
+    search: z.object({
+      maxRequests: z.coerce.number().int().positive(),
+      windowMs: z.coerce.number().int().positive()
     })
   })
 });
@@ -65,6 +69,10 @@ const defaultConfig: TConfig = {
     },
     joinServer: {
       maxRequests: 5,
+      windowMs: 60_000
+    },
+    search: {
+      maxRequests: 15,
       windowMs: 60_000
     }
   }

@@ -1,5 +1,6 @@
 import { EmojiPicker } from '@/components/emoji-picker';
 import { useCustomEmojis } from '@/features/server/emojis/hooks';
+import { useFilteredUsers } from '@/features/server/users/hooks';
 import type { TCommandInfo } from '@sharkord/shared';
 import { Button } from '@sharkord/ui';
 import Emoji, { gitHubEmojis } from '@tiptap/extension-emoji';
@@ -10,18 +11,27 @@ import { ChevronDown, ChevronUp, Smile } from 'lucide-react';
 import {
   memo,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
-  useState
+  useState,
+  type Ref
 } from 'react';
-import type { TEmojiItem } from './helpers';
 import {
   COMMANDS_STORAGE_KEY,
   CommandSuggestion
-} from './plugins/command-suggestion';
-import { SlashCommands } from './plugins/slash-commands-extension';
-import { EmojiSuggestion } from './plugins/suggestions';
+} from './extensions/commands/command-suggestion';
+import { PluginCommandNode } from './extensions/commands/plugin-command-node';
+import { SlashCommands } from './extensions/commands/slash-commands-extension';
+import { EmojiSuggestion } from './extensions/emojis/suggestions';
+import { Mention } from './extensions/mentions';
+import { MentionNode } from './extensions/mentions/node';
+import {
+  MENTION_STORAGE_KEY,
+  MentionSuggestion
+} from './extensions/mentions/suggestion';
+import type { TEmojiItem } from './helpers';
 
 type TTiptapInputProps = {
   disabled?: boolean;
@@ -32,6 +42,11 @@ type TTiptapInputProps = {
   onCancel?: () => void;
   onTyping?: () => void;
   commands?: TCommandInfo[];
+  ref?: Ref<TTiptapInputHandle>;
+};
+
+type TTiptapInputHandle = {
+  focus: () => void;
 };
 
 const TiptapInput = memo(
@@ -43,9 +58,11 @@ const TiptapInput = memo(
     onTyping,
     disabled,
     readOnly,
-    commands
+    commands,
+    ref
   }: TTiptapInputProps) => {
     const readOnlyRef = useRef(readOnly);
+
     readOnlyRef.current = readOnly;
 
     const [isExpanded, setIsExpanded] = useState(false);
@@ -55,6 +72,7 @@ const TiptapInput = memo(
     const editorWrapperRef = useRef<HTMLDivElement>(null);
 
     const customEmojis = useCustomEmojis();
+    const users = useFilteredUsers();
 
     const extensions = useMemo(() => {
       const exts = [
@@ -84,7 +102,13 @@ const TiptapInput = memo(
           HTMLAttributes: {
             class: 'emoji-image'
           }
-        })
+        }),
+        Mention.configure({
+          users,
+          suggestion: MentionSuggestion
+        }),
+        MentionNode,
+        PluginCommandNode
       ];
 
       if (commands) {
@@ -98,7 +122,7 @@ const TiptapInput = memo(
       }
 
       return exts;
-    }, [customEmojis, commands]);
+    }, [customEmojis, commands, users]);
 
     const editor = useEditor({
       extensions,
@@ -165,6 +189,14 @@ const TiptapInput = memo(
       }
     });
 
+    useImperativeHandle(
+      ref,
+      () => ({
+        focus: () => editor?.chain().focus().run()
+      }),
+      [editor]
+    );
+
     const handleEmojiSelect = (emoji: TEmojiItem) => {
       if (disabled || readOnly) return;
 
@@ -176,8 +208,24 @@ const TiptapInput = memo(
     // keep emoji storage in sync with custom emojis from the store
     // this ensures newly added emojis appear in autocomplete without refreshing the app
     useEffect(() => {
-      if (editor && editor.storage.emoji) {
-        editor.storage.emoji.emojis = [...gitHubEmojis, ...customEmojis];
+      if (editor) {
+        const allEmojis = [...gitHubEmojis, ...customEmojis];
+
+        if (editor.storage.emoji) {
+          editor.storage.emoji.emojis = allEmojis;
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const applyEmojiOptions = (extension: any) => {
+          const typed = extension;
+
+          if (typed.name === 'emoji' && typed.options) {
+            typed.options.emojis = allEmojis;
+          }
+        };
+
+        editor.extensionManager.extensions.forEach(applyEmojiOptions);
+        editor.options.extensions?.forEach(applyEmojiOptions);
       }
     }, [editor, customEmojis]);
 
@@ -191,6 +239,20 @@ const TiptapInput = memo(
         }
       }
     }, [editor, commands]);
+
+    // keep mention users storage in sync with the users from the store
+    useEffect(() => {
+      if (editor) {
+        const storage = editor.storage as unknown as Record<
+          string,
+          { users?: typeof users }
+        >;
+
+        if (storage[MENTION_STORAGE_KEY]) {
+          storage[MENTION_STORAGE_KEY].users = users;
+        }
+      }
+    }, [editor, users]);
 
     useEffect(() => {
       if (editor && value !== undefined) {
@@ -265,4 +327,4 @@ const TiptapInput = memo(
   }
 );
 
-export { TiptapInput };
+export { TiptapInput, type TTiptapInputHandle };

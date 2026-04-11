@@ -6,6 +6,7 @@ import {
 import { and, asc, eq, gt } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../db';
+import { assertDmChannel } from '../../db/queries/dms';
 import { joinMessagesWithRelations } from '../../db/queries/messages';
 import { channels, messages } from '../../db/schema';
 import { invariant } from '../../utils/invariant';
@@ -40,17 +41,20 @@ const getThreadMessagesRoute = protectedProcedure
       message: 'Cannot get thread for a reply message'
     });
 
-    const channelId = parentMessage.channelId;
-
-    await ctx.needsChannelPermission(channelId, ChannelPermission.VIEW_CHANNEL);
+    await Promise.all([
+      assertDmChannel(parentMessage.channelId, ctx.userId),
+      ctx.needsChannelPermission(
+        parentMessage.channelId,
+        ChannelPermission.VIEW_CHANNEL
+      )
+    ]);
 
     const channel = await db
       .select({
-        private: channels.private,
-        fileAccessToken: channels.fileAccessToken
+        private: channels.private
       })
       .from(channels)
-      .where(eq(channels.id, channelId))
+      .where(eq(channels.id, parentMessage.channelId))
       .get();
 
     invariant(channel, {
@@ -84,10 +88,7 @@ const getThreadMessagesRoute = protectedProcedure
       return { messages: [], nextCursor };
     }
 
-    const messagesWithRelations = await joinMessagesWithRelations(
-      rows,
-      channel
-    );
+    const messagesWithRelations = await joinMessagesWithRelations(rows);
 
     return { messages: messagesWithRelations, nextCursor };
   });

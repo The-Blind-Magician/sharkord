@@ -7,11 +7,12 @@ import { cn } from '@/lib/utils';
 import { ChannelPermission } from '@sharkord/shared';
 import { Button } from '@sharkord/ui';
 import { HeadphoneOff, Headphones, Mic, MicOff, Settings } from 'lucide-react';
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ServerScreen } from '../server-screens/screens';
 import { UserAvatar } from '../user-avatar';
 import { UserPopover } from '../user-popover';
+import { ShortcutRegistrar } from '../shortcut-registrar';
 
 const UserControl = memo(() => {
   const { t } = useTranslation('sidebar');
@@ -19,6 +20,15 @@ const UserControl = memo(() => {
   const currentVoiceChannelId = useCurrentVoiceChannelId();
   const { ownVoiceState, toggleMic, toggleSound } = useVoice();
   const channelCan = useChannelCan(currentVoiceChannelId);
+
+  useEffect(() => {
+    ShortcutRegistrar.register(['control', 'shift'], 'm', toggleMic);
+    ShortcutRegistrar.register(['control', 'shift'], 'd', toggleSound);
+    return () => {
+      ShortcutRegistrar.deregister(['control', 'shift'], 'm');
+      ShortcutRegistrar.deregister(['control', 'shift'], 'd');
+    }
+  });
 
   const handleSettingsClick = useCallback(() => {
     openServerScreen(ServerScreen.USER_SETTINGS);

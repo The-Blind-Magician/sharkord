@@ -3,6 +3,7 @@ import { Search } from 'lucide-react';
 import { memo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Dialog } from '../dialogs/dialogs';
+import { ShortcutRegistrar } from '../shortcut-registrar';
 
 const ServerSearch = memo(() => {
   const { t } = useTranslation('topbar');
@@ -11,16 +12,10 @@ const ServerSearch = memo(() => {
   }, []);
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        openSearchDialog();
-      }
+    ShortcutRegistrar.register(['control'], 'k', openSearchDialog);
+    return () => {
+      ShortcutRegistrar.deregister(['control'], 'k');
     };
-
-    window.addEventListener('keydown', onKeyDown);
-
-    return () => window.removeEventListener('keydown', onKeyDown);
   }, [openSearchDialog]);
 
   return (

@@ -7,9 +7,10 @@ import { cn } from '@/lib/utils';
 import { ChannelPermission } from '@sharkord/shared';
 import { Button } from '@sharkord/ui';
 import { HeadphoneOff, Headphones, Mic, MicOff, Settings } from 'lucide-react';
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ServerScreen } from '../server-screens/screens';
+import { ShortcutRegistrar } from '../shortcut-registrar';
 import { UserAvatar } from '../user-avatar';
 import { UserPopover } from '../user-popover';
 
@@ -19,6 +20,24 @@ const UserControl = memo(() => {
   const currentVoiceChannelId = useCurrentVoiceChannelId();
   const { ownVoiceState, toggleMic, toggleSound } = useVoice();
   const channelCan = useChannelCan(currentVoiceChannelId);
+
+  const handleToggleMicShortcut = useCallback(() => {
+    if (!!currentVoiceChannelId && !channelCan(ChannelPermission.SPEAK)) return;
+    toggleMic();
+  }, [currentVoiceChannelId, toggleMic, channelCan]);
+
+  useEffect(() => {
+    ShortcutRegistrar.register(
+      ['control', 'shift'],
+      'm',
+      handleToggleMicShortcut
+    );
+    ShortcutRegistrar.register(['control', 'shift'], 'd', toggleSound);
+    return () => {
+      ShortcutRegistrar.deregister(['control', 'shift'], 'm');
+      ShortcutRegistrar.deregister(['control', 'shift'], 'd');
+    };
+  }, [handleToggleMicShortcut, toggleSound]);
 
   const handleSettingsClick = useCallback(() => {
     openServerScreen(ServerScreen.USER_SETTINGS);

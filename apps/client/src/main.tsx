@@ -19,6 +19,7 @@ import { exposePluginStore } from './features/server/plugins/plugin-store.ts';
 import { store } from './features/store.ts';
 import { exposeLibs, exposeReact } from './helpers/exposes.ts';
 import { LocalStorageKey } from './helpers/storage.ts';
+import { ShortcutRegistrar } from './components/shortcut-registrar/index.tsx';
 import './index.css';
 
 exposeReact();

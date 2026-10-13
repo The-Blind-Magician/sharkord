@@ -10,6 +10,13 @@ import { ShortcutRegistrar } from '../shortcut-registrar';
 const HotkeysController = memo(() => {
   useEffect(() => {
     const pressedKeys = new Set<string>();
+    const forceRefresh = () => {
+      const url = new URL(window.location.href);
+
+      url.searchParams.set('_refresh', `${Date.now()}`);
+      window.location.replace(url.toString());
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
       pressedKeys.add(e.key.toLowerCase());
@@ -43,6 +50,7 @@ const HotkeysController = memo(() => {
 
     ShortcutRegistrar.register([], 'F4', togglePluginSlotDebug);
     ShortcutRegistrar.register([], 'F9', () => toggleDialog(Dialog.VOICE_DEBUG));
+    ShortcutRegistrar.register(['control'], 'F5', forceRefresh);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('blur', handleBlur);
@@ -50,6 +58,7 @@ const HotkeysController = memo(() => {
     return () => {
       ShortcutRegistrar.deregister([], 'F4');
       ShortcutRegistrar.deregister([], 'F9');
+      ShortcutRegistrar.deregister(['control'], 'F5');
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);

@@ -7,10 +7,12 @@ import { migrateDatabase } from '../db/migrate';
 import { DATA_PATH } from '../helpers/paths';
 import { clearVoiceMoveGrantsForTests } from '../helpers/voice-move-grants';
 import { createHttpServer } from '../http';
+import { pluginManager } from '../plugins';
 import { drainActivityLogQueue } from '../queues/activity-log';
 import { drainLoginsQueue } from '../queues/logins';
 import { loadMediasoup } from '../utils/mediasoup';
 import { clearRateLimitersForTests } from '../utils/rate-limiters/rate-limiter';
+import { clearUserSocketsForTests } from '../utils/wss';
 import { DRIZZLE_PATH, setTestDb } from './mock-db';
 import { seedTestDb } from './seed';
 
@@ -92,6 +94,7 @@ beforeEach(async () => {
 
   clearRateLimitersForTests();
   clearVoiceMoveGrantsForTests();
+  clearUserSocketsForTests();
 
   if (sqlite) {
     try {
@@ -113,6 +116,17 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // the plugin manager is a process wide singleton, so a plugin a test loaded would otherwise
+  // keep its hooks running in every test file after it (a beforeFileSave hook rewriting uploads)
+  await pluginManager.unloadPlugins();
+
+  // a test that turns rate limiting off and fails before turning it back on would leave it off
+  globalThis.disableRateLimiting = false;
+
+  // spies replace exports on the shared module objects, so they have to be undone before the
+  // next test, or the next test file, imports the stub instead of the real function
+  mock.restore();
+
   // the queues outlive the test, so a job still in flight here would land in whichever database
   // the next test creates, or throw against a closed one. draining first is what keeps a queued
   // side effect inside the test that caused it

@@ -12,6 +12,7 @@
     "JOIN_VOICE_CHANNELS": "加入语音频道",
     "SHARE_SCREEN": "共享屏幕",
     "ENABLE_WEBCAM": "启用摄像头",
+    "SEND_VOICE_REACTION": "在语音频道中作出反应",
     "MANAGE_CHANNELS": "管理频道",
     "MANAGE_CHANNEL_PERMISSIONS": "管理频道权限",
     "MANAGE_CATEGORIES": "管理分类",
@@ -25,6 +26,7 @@
     "MANAGE_INVITES": "管理邀请",
     "MANAGE_UPDATES": "管理更新",
     "MANAGE_PLUGINS": "管理插件",
+    "MANAGE_PLUGIN_PERMISSIONS": "管理插件权限",
     "USE_PLUGINS": "使用插件",
     "VIEW_USER_SENSITIVE_DATA": "查看用户敏感数据"
   },
@@ -36,6 +38,7 @@
     "JOIN_VOICE_CHANNELS": "授予加入语音频道的权限。",
     "SHARE_SCREEN": "授予共享屏幕的权限。",
     "ENABLE_WEBCAM": "授予启用摄像头的权限。",
+    "SEND_VOICE_REACTION": "授予在语音频道中发送表情反应的权限。",
     "MANAGE_CHANNELS": "授予创建、更新和删除频道的权限。",
     "MANAGE_CHANNEL_PERMISSIONS": "授予管理角色和用户频道特定权限的权限。",
     "MANAGE_CATEGORIES": "授予创建、更新和删除分类的权限。",
@@ -49,6 +52,7 @@
     "MANAGE_INVITES": "授予创建、编辑和删除服务器邀请的权限。",
     "MANAGE_UPDATES": "授予执行更新的权限。",
     "MANAGE_PLUGINS": "授予管理插件的权限。",
+    "MANAGE_PLUGIN_PERMISSIONS": "允许选择哪些角色可以使用插件的各个命令和操作。拥有此权限的人可以将这些能力授予自己。",
     "USE_PLUGINS": "授予使用插件的权限，例如执行插件命令或查看插件添加的 UI 元素。",
     "VIEW_USER_SENSITIVE_DATA": "授予查看用户敏感数据（如身份标识、IP 地址和位置）的权限。"
   },

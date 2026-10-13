@@ -1,3 +1,4 @@
+export * from './locales';
 export * from './metrics';
 export * from './permissions';
 export * from './storage';
@@ -14,12 +15,23 @@ export const OWNER_ROLE_ID = 1;
 
 export const TYPING_MS = 300;
 
+export enum MessageNodeType {
+  MENTION = 'mention',
+  ROLE_MENTION = 'role-mention',
+  CHANNEL_REFERENCE = 'channel-reference',
+  PLUGIN_COMMAND = 'plugin-command',
+  // written by @tiptap/extension-emoji, not by our own nodes
+  EMOJI = 'emoji'
+}
+
 export enum DisconnectCode {
   UNEXPECTED = 1006,
   KICKED = 40000,
   BANNED = 40001,
   SERVER_SHUTDOWN = 40002
 }
+
+export const MAX_USER_NAME_LENGTH = 24;
 
 export const DELETED_USER_IDENTITY_AND_NAME = '__deleted_user__'; // this will be used as identity AND name, but in the interface we render as "Deleted"
 

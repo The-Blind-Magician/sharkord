@@ -1,8 +1,12 @@
+import { PluginSlotRenderer } from '@/components/plugin-slot-renderer';
+import { toggleChannelMuted } from '@/features/app/actions';
+import { useIsChannelMuted } from '@/features/app/hooks';
 import { useChannelById } from '@/features/server/channels/hooks';
-import { ChannelType } from '@sharkord/shared';
-import { IconButton } from '@sharkord/ui';
-import { Hash, MessageCircleMore, Volume2, X } from 'lucide-react';
+import { ChannelType, PluginSlot } from '@sharkord/shared';
+import { IconButton, Tooltip } from '@sharkord/ui';
+import { BellOff, Hash, MessageCircleMore, Volume2, X } from 'lucide-react';
 import { memo, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PinnedMessagesPopover } from './pinned-messages-popover';
 
 type TTextTopbarProps = {
@@ -13,7 +17,15 @@ type TTextTopbarProps = {
 
 const TextTopbar = memo(
   ({ onScrollToMessage, channelId, onClose }: TTextTopbarProps) => {
+    const { t } = useTranslation();
     const channel = useChannelById(channelId);
+    const isMuted = useIsChannelMuted(channelId);
+
+    const onUnmuteClick = useCallback(() => {
+      toggleChannelMuted(channelId);
+    }, [channelId]);
+
+    const pluginProps = useMemo(() => ({ channelId }), [channelId]);
 
     const info = useMemo(() => {
       if (channel?.isDm) {
@@ -63,6 +75,21 @@ const TextTopbar = memo(
             )}
           </div>
           <div className="flex items-center gap-2">
+            <PluginSlotRenderer
+              slotId={PluginSlot.CHANNEL_HEADER}
+              props={pluginProps}
+            />
+
+            {isMuted && (
+              <Tooltip content={t('channelMutedTooltip')}>
+                <IconButton
+                  icon={BellOff}
+                  size="sm"
+                  variant="ghost"
+                  onClick={onUnmuteClick}
+                />
+              </Tooltip>
+            )}
             <PinnedMessagesPopover onScrollToMessage={onScrollToMessage} />
             {onClose && (
               <IconButton

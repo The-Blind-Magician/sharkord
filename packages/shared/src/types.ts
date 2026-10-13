@@ -116,7 +116,7 @@ export type TTempFile = {
   md5: string;
   path: string;
   extension: string;
-  userId: number;
+  userId: number | null;
 };
 
 export type TServerInfo = Pick<
@@ -133,6 +133,8 @@ export enum OidcError {
   ACCESS_DENIED = 'access_denied',
   INVALID_STATE = 'invalid_state',
   EXPIRED = 'expired',
+  RATE_LIMITED = 'rate_limited',
+  REGISTRATION_CLOSED = 'registration_closed',
   SERVER_ERROR = 'server_error'
 }
 
@@ -211,9 +213,12 @@ export const HEX_COLOR_REGEX = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
 
 export const INVITE_CODE_REGEX = /^[A-Za-z0-9_-]+$/;
 
-// true for anything containing a pictographic character, which is how a unicode
-// emoji is told apart from a custom emoji name without an exhaustive table
-export const EMOJI_CHARACTER_REGEX = /\p{Extended_Pictographic}/u;
+// true only when the whole string is made of emoji characters (pictographs plus the
+// joiners, variation selectors, skin tones and flag parts that compose them), so a unicode
+// emoji is told apart from a custom emoji name without an exhaustive table and no other
+// text can ride along with it
+export const EMOJI_CHARACTER_REGEX =
+  /^(?:\p{Extended_Pictographic}|\p{Emoji_Component})+$/u;
 
 // standard emoji reactions are stored as the github shortcode the picker hands over ('fox'),
 // not as the character, so the character test alone rejects every one of them

@@ -85,6 +85,12 @@ Before you write anything, search for it. Most of what a new route needs already
   domain rules in `helpers/`, infrastructure in `utils/`, orchestration only in the route.
   A route that contains a raw multi-table query, or a `utils/` file that knows about
   permissions, is in the wrong place.
+- **A domain operation in `helpers/` owns its own write.** `banUser`, `createChannel` and
+  `setMessagePinned` each do one write next to the event, the publish and the activity log
+  that belong with it, because a route and a plugin action both have to go through exactly
+  that sequence. Splitting the statement into `db/mutations/` for one caller buys an
+  indirection and loses the guarantee that the side effects travel with it. A write that is
+  genuinely just a write, reused by several operations, still belongs in `db/mutations/`.
 - **Shared means shared.** Anything both client and server rely on — constants, enums,
   types, regexes, validation rules — lives in `packages/shared`, declared once. Anything
   only one side uses does not belong there.
@@ -224,6 +230,12 @@ How server tests work:
   file, and reference it from the test by its seeded id. Append new rows **after** the
   existing ones so the ids already asserted on elsewhere do not shift, and check
   `setup.test.ts` (it asserts the seeded row counts) when you add one.
+- Every test file runs in **one process**, in an order that depends on the checkout, so
+  anything a test leaves behind reaches whichever file runs next. Never use `mock.module`
+  in a test: it replaces the module for the rest of the run and `mock.restore()` does not
+  undo it. Use `spyOn` on the module object instead (`import * as x from '...'`), which the
+  global `afterEach` in `setup.ts` restores. Any process wide state a test changes
+  (`config`, a singleton) must be put back before the file ends.
 
 ### Route test coverage (mandatory)
 
@@ -280,6 +292,31 @@ Server calls go inline where they are used, wrapped in `try`/`catch` with a toas
 `actions.ts` that only wraps a single `getTRPCClient()` mutation — that indirection buys
 nothing and hides the call site. `actions.ts` is for dispatching to the store and for logic
 that several components share.
+
+**Always name the client, never chain off the call.** `getTRPCClient()` is assigned to a
+`const trpc` first, and the procedure is called on that:
+
+```ts
+// no
+await getTRPCClient().messages.toggleReaction.mutate({ messageId, emoji });
+
+// yes
+const trpc = getTRPCClient();
+
+try {
+  await trpc.messages.toggleReaction.mutate({
+    messageId,
+    emoji: emoji.shortcodes[0]
+  });
+} catch (error) {
+  // code
+}
+```
+
+The chained form buries the call site, gets worse the moment a second call is added, and
+hides that `getTRPCClient()` itself can throw. Where that throw matters — it has no client
+during a reconnect — put the `const trpc` **inside** the `try` so the failure lands in the
+same `catch` as the call.
 
 Derived state is a selector, never an inline comparison inside an action or component.
 Before writing one, **search `selectors.ts` for it** — comparisons like "is the selected
@@ -376,6 +413,33 @@ Every new behaviour needs tests and the whole suite must pass, see [Testing](#te
   not, in code or in JSX. Use an early return, a lookup object, or an `if`/`else` assigned to a
   `let`. If the branches are what a component renders, split it into two components or pull the
   choice into a variable above the return.
+- NEVER chain off the result of a call: no `a().b`, `a()?.b().c ?? []`, and no hook call
+  followed by a property access. Call it on its own line, name or destructure what it
+  returns, then use that, with an `if` for the missing case, even when it takes more lines:
+
+  ```ts
+  // no
+  const usePlaybackDeviceId = () => useDevices().devices.playbackId;
+  const users = VoiceRuntime.findById(channelId)?.getState().users ?? [];
+
+  // yes
+  const usePlaybackDeviceId = () => {
+    const { devices } = useDevices();
+
+    return devices.playbackId;
+  };
+
+  const runtime = VoiceRuntime.findById(channelId);
+  let userIds: number[] = [];
+
+  if (runtime) {
+    const { users } = runtime.getState();
+
+    userIds = users.map(({ userId }) => userId);
+  }
+  ```
+
+  Test assertions (`expect(x).toBe(y)`) are the exception.
 - NEVER prefix a call with `void`. Write `returnToPresent();`, not `void returnToPresent();`.
   It reads as a type, adds nothing at runtime, and marks the one thing worth looking at (a
   promise nobody awaits) as deliberate instead of leaving it visible. If the promise genuinely

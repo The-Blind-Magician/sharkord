@@ -23,10 +23,12 @@ import { infoRouteHandler } from './info';
 import { interfaceRouteHandler } from './interface';
 import { loginRouteHandler } from './login';
 import { manifestRouteHandler } from './manifest';
+import { oidcBackchannelLogoutRouteHandler } from './oidc/backchannel-logout';
 import { oidcCallbackRouteHandler } from './oidc/callback';
 import { oidcExchangeRouteHandler } from './oidc/exchange';
 import { oidcLoginRouteHandler } from './oidc/login';
 import { pluginBundleRouteHandler } from './plugin-bundle';
+import { runPluginRoute } from './plugin-route';
 import { pluginsComponentsRouteHandler } from './plugins-components';
 import { publicRouteHandler } from './public';
 import { uploadFileRouteHandler } from './upload';
@@ -91,14 +93,19 @@ const routeHandlers: Partial<
     exact: {
       '/upload': uploadFileRouteHandler,
       '/login': loginRouteHandler,
-      '/oidc/exchange': oidcExchangeRouteHandler
+      '/oidc/exchange': oidcExchangeRouteHandler,
+      '/oidc/backchannel-logout': oidcBackchannelLogoutRouteHandler
     },
     prefix: {}
   }
 };
 
 // this http server implementation is temporary and will be moved to bun server later when things are more stable
-const createHttpServer = async (port: number = config.server.port) => {
+// an empty host keeps node's default of listening on every interface
+const createHttpServer = async (
+  port: number = config.server.port,
+  host: string = config.server.host
+) => {
   return new Promise<http.Server>((resolve) => {
     const server = http.createServer(
       async (req: http.IncomingMessage, res: http.ServerResponse) => {
@@ -152,14 +159,14 @@ const createHttpServer = async (port: number = config.server.port) => {
             const pluginRoute = getPluginRoute(pathname);
 
             if (pluginRoute) {
-              const pluginRouteHandler = pluginManager.getHttpRouteHandler(
+              const route = pluginManager.getHttpRoute(
                 pluginRoute.pluginId,
                 method,
                 pluginRoute.routePath
               );
 
-              if (pluginRouteHandler) {
-                return await pluginRouteHandler(req, res);
+              if (route) {
+                return await runPluginRoute(req, res, route);
               }
 
               if (method !== 'OPTIONS') {
@@ -238,7 +245,7 @@ const createHttpServer = async (port: number = config.server.port) => {
       logger.debug('HTTP server closed');
     });
 
-    server.listen(port);
+    server.listen(port, host || undefined);
   });
 };
 

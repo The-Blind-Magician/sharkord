@@ -25,6 +25,7 @@ const zRateLimiter = z.object({
 
 const zConfig = z.object({
   server: z.object({
+    host: z.string().trim(),
     port: z.coerce.number().int().positive(),
     debug: z.coerce.boolean(),
     autoupdate: z.coerce.boolean(),
@@ -85,8 +86,11 @@ const zConfig = z.object({
     adminCreate: zRateLimiter,
     voiceTransport: zRateLimiter,
     voiceStream: zRateLimiter,
+    voiceReaction: zRateLimiter,
     useSecretToken: zRateLimiter,
     pluginExecute: zRateLimiter,
+    pluginInstall: zRateLimiter,
+    pluginRoute: zRateLimiter,
     oidc: zRateLimiter
   })
 });
@@ -95,6 +99,7 @@ type TConfig = z.infer<typeof zConfig>;
 
 const defaultConfig: TConfig = {
   server: {
+    host: '',
     port: 4991,
     debug: IS_DEVELOPMENT,
     autoupdate: false,
@@ -196,12 +201,24 @@ const defaultConfig: TConfig = {
       maxRequests: 200,
       windowMs: 60_000
     },
+    voiceReaction: {
+      maxRequests: 20,
+      windowMs: 30_000
+    },
     useSecretToken: {
       maxRequests: 5,
       windowMs: 60_000
     },
     pluginExecute: {
       maxRequests: 60,
+      windowMs: 60_000
+    },
+    pluginInstall: {
+      maxRequests: 10,
+      windowMs: 60_000
+    },
+    pluginRoute: {
+      maxRequests: 300,
       windowMs: 60_000
     },
     oidc: {
@@ -246,6 +263,7 @@ if (!configExists) {
 }
 
 const envOverridesMap: Record<string, string> = {
+  'server.host': 'SHARKORD_HOST',
   'server.port': 'SHARKORD_PORT',
   'server.debug': 'SHARKORD_DEBUG',
   'server.autoupdate': 'SHARKORD_AUTOUPDATE',

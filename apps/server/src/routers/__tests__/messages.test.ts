@@ -114,6 +114,28 @@ describe('messages router', () => {
     expect(unpinned?.pinnedBy).toBeNull();
   });
 
+  test('should throw when user lacks permissions (togglePin)', async () => {
+    const { caller: caller1 } = await initTest(1);
+    const { caller: caller2 } = await initTest(2);
+
+    const messageId = await caller1.messages.send({
+      channelId: 1,
+      content: 'pin me'
+    });
+
+    await expect(caller2.messages.togglePin({ messageId })).rejects.toThrow(
+      'Insufficient permissions'
+    );
+
+    const message = await tdb
+      .select({ pinned: messages.pinned })
+      .from(messages)
+      .where(eq(messages.id, messageId))
+      .get();
+
+    expect(message?.pinned).toBe(false);
+  });
+
   test('should throw when user lacks permissions (toggleReaction)', async () => {
     const { caller: caller1 } = await initTest(1);
     const { caller: caller2 } = await initTest(2);
@@ -579,6 +601,69 @@ describe('messages router', () => {
     expect(result.messages.length).toBe(0);
     expect(result.files.length).toBe(25);
     expect(result.truncated).toBe(true);
+  });
+
+  test('should match non ascii messages and file names regardless of case', async () => {
+    const { caller } = await initTest(1);
+
+    const messageId = await caller.messages.send({
+      channelId: 1,
+      content: 'Отчёт за МАРТ готов',
+      files: []
+    });
+
+    const now = Date.now();
+
+    const [insertedFile] = await tdb
+      .insert(files)
+      .values({
+        name: `report-${now}.txt`,
+        originalName: 'Отчёт за март.txt',
+        md5: `report-md5-${now}`,
+        userId: 1,
+        size: 64,
+        mimeType: 'text/plain',
+        extension: 'txt',
+        createdAt: now
+      })
+      .returning({ id: files.id });
+
+    await tdb.insert(messageFiles).values({
+      messageId,
+      fileId: insertedFile!.id,
+      createdAt: now
+    });
+
+    for (const query of ['отчёт', 'ОТЧЁТ', 'март']) {
+      const result = await caller.messages.search({ query });
+
+      expect(result.messages.map((message) => message.id)).toEqual([messageId]);
+      expect(result.files.map((item) => item.file.id)).toEqual([
+        insertedFile!.id
+      ]);
+    }
+  });
+
+  test('should treat glob wildcards in the query literally', async () => {
+    const { caller } = await initTest(1);
+
+    const literalMessageId = await caller.messages.send({
+      channelId: 1,
+      content: 'wild a*b?c[d] card',
+      files: []
+    });
+
+    await caller.messages.send({
+      channelId: 1,
+      content: 'wild axxbycd card',
+      files: []
+    });
+
+    const result = await caller.messages.search({ query: 'a*b?c[d]' });
+
+    expect(result.messages.map((message) => message.id)).toEqual([
+      literalMessageId
+    ]);
   });
 
   test('should throw when search is disabled on server', async () => {

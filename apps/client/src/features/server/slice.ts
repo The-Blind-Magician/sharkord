@@ -12,8 +12,11 @@ import type {
   TJoinedMessage,
   TJoinedPublicUser,
   TJoinedRole,
+  TPluginCapabilityAccessRule,
   TPluginComponentsMap,
   TPluginMetadata,
+  TPluginTab,
+  TPluginTabsMap,
   TPublicServerSettings,
   TReadStateMap,
   TServerInfo,
@@ -26,8 +29,10 @@ import type {
   TDisconnectInfo,
   TMessagesMap,
   TReconnectState,
-  TThreadMessagesMap
+  TThreadMessagesMap,
+  TVoiceReaction
 } from './types';
+import { MAX_VOICE_REACTIONS_PER_USER } from './voice/statics';
 
 export interface IServerState {
   connected: boolean;
@@ -59,6 +64,9 @@ export interface IServerState {
     [parentMessageId: number]: number[];
   };
   voiceMap: TVoiceMap;
+  voiceReactions: {
+    [userId: number]: TVoiceReaction[];
+  };
   externalStreamsMap: TExternalStreamsMap;
   ownVoiceState: TVoiceUserState;
   pinnedCard: TPinnedCard | undefined;
@@ -73,6 +81,8 @@ export interface IServerState {
   hideOwnScreenShare: boolean;
   alwaysShowVoiceControls: boolean;
   pluginComponents: TPluginComponentsMap;
+  pluginTabs: TPluginTabsMap;
+  pluginCapabilityAccess: TPluginCapabilityAccessRule[];
   activeFullscreenPluginId: string | undefined;
   dmsOpen: boolean;
 }
@@ -102,6 +112,7 @@ const initialState: IServerState = {
   typingMap: {},
   threadTypingMap: {},
   voiceMap: {},
+  voiceReactions: {},
   externalStreamsMap: {},
   ownVoiceState: {
     micMuted: false,
@@ -127,6 +138,8 @@ const initialState: IServerState = {
     true
   ),
   pluginComponents: {},
+  pluginTabs: {},
+  pluginCapabilityAccess: [],
   activeFullscreenPluginId: undefined,
   dmsOpen: false,
   hideOwnScreenShare: getLocalStorageItemBool(
@@ -783,6 +796,42 @@ export const serverSlice = createSlice({
         ...newState
       };
     },
+    addVoiceReaction: (
+      state,
+      action: PayloadAction<{ userId: number; reaction: TVoiceReaction }>
+    ) => {
+      const { userId, reaction } = action.payload;
+      const reactions = state.voiceReactions[userId];
+
+      if (!reactions) {
+        state.voiceReactions[userId] = [reaction];
+
+        return;
+      }
+
+      reactions.push(reaction);
+
+      if (reactions.length > MAX_VOICE_REACTIONS_PER_USER) reactions.shift();
+    },
+    removeVoiceReaction: (
+      state,
+      action: PayloadAction<{ userId: number; reactionId: number }>
+    ) => {
+      const { userId, reactionId } = action.payload;
+      const reactions = state.voiceReactions[userId];
+
+      if (!reactions) return;
+
+      const remaining = reactions.filter(({ id }) => id !== reactionId);
+
+      if (!remaining.length) {
+        delete state.voiceReactions[userId];
+
+        return;
+      }
+
+      state.voiceReactions[userId] = remaining;
+    },
     updateOwnVoiceState: (
       state,
       action: PayloadAction<Partial<TVoiceUserState>>
@@ -856,6 +905,21 @@ export const serverSlice = createSlice({
     },
     setPluginCommands: (state, action: PayloadAction<TCommandsMapByPlugin>) => {
       state.pluginCommands = action.payload;
+    },
+    setPluginCapabilityAccess: (
+      state,
+      action: { payload: TPluginCapabilityAccessRule[] }
+    ) => {
+      state.pluginCapabilityAccess = action.payload;
+    },
+    setPluginTabs: (state, action: { payload: TPluginTabsMap }) => {
+      state.pluginTabs = action.payload;
+    },
+    setPluginTabsForPlugin: (
+      state,
+      action: { payload: { pluginId: string; tabs: TPluginTab[] } }
+    ) => {
+      state.pluginTabs[action.payload.pluginId] = action.payload.tabs;
     },
     setPluginComponents: (
       state,

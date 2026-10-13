@@ -30,10 +30,11 @@ describe('/upload', () => {
   });
 
   afterAll(async () => {
-    const files = await fs.readdir(TMP_PATH);
+    const entries = await fs.readdir(TMP_PATH);
 
-    for (const file of files) {
-      await fs.unlink(path.join(TMP_PATH, file));
+    // the tmp dir also holds directories other tests create, so this cannot assume files
+    for (const entry of entries) {
+      await fs.rm(path.join(TMP_PATH, entry), { recursive: true, force: true });
     }
   });
 
@@ -574,6 +575,14 @@ describe('sanitizeFileName', () => {
     expect(sanitizeFileName('../../secret.txt')).toBe('secret.txt');
     expect(sanitizeFileName('/etc/shadow')).toBe('shadow');
     expect(sanitizeFileName('foo/../bar.txt')).toBe('bar.txt');
+  });
+
+  test('should keep a leading letter and colon on every platform', () => {
+    expect(sanitizeFileName('a:b.txt')).toBe('a:b.txt');
+    expect(sanitizeFileName('C:informe.txt')).toBe('C:informe.txt');
+    expect(sanitizeFileName('x:')).toBe('x:');
+    expect(sanitizeFileName('C:\\Windows\\evil.txt')).toBe('evil.txt');
+    expect(sanitizeFileName('C:/Windows/evil.txt')).toBe('evil.txt');
   });
 
   test('should return null for null bytes', () => {

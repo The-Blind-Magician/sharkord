@@ -7,6 +7,7 @@ import {
   type TStreamQualityLayer,
   type TTransportParams,
   type TVoiceMap,
+  type TVoiceProducerInfo,
   type TVoiceUserState
 } from '@sharkord/shared';
 import type {
@@ -134,6 +135,8 @@ type TExternalStreamInternal = {
   producers: TExternalStreamProducers;
 };
 
+const EXTERNAL_STREAM_ID_BASE = 1_000_000;
+
 class VoiceRuntime {
   public readonly id: number;
   private state: TChannelState = { users: [], externalStreams: {} };
@@ -147,7 +150,7 @@ class VoiceRuntime {
   private consumers: TConsumerMap = {};
   private producerQualityLayers: TProducerQualityLayerMap = {};
 
-  private externalCounter = 0;
+  private externalCounter = EXTERNAL_STREAM_ID_BASE;
   private externalStreamsInternal: {
     [streamId: number]: TExternalStreamInternal;
   } = {};
@@ -651,7 +654,21 @@ class VoiceRuntime {
 
     this.setProducerQualityLayers(userId, type, validatedQualityLayers);
 
+    eventBus.emit('voice:producer_added', {
+      channelId: this.id,
+      userId,
+      kind: type,
+      producerId: producer.id
+    });
+
     producer.observer.on('close', () => {
+      eventBus.emit('voice:producer_removed', {
+        channelId: this.id,
+        userId,
+        kind: type,
+        producerId: producer.id
+      });
+
       if (type === StreamKind.VIDEO) {
         delete this.videoProducers[userId];
       } else if (type === StreamKind.AUDIO) {
@@ -1012,6 +1029,24 @@ class VoiceRuntime {
       : internal.producers.videoProducer;
   };
 
+  public listProducers = (): TVoiceProducerInfo[] => {
+    const maps = [
+      [StreamKind.AUDIO, this.audioProducers],
+      [StreamKind.VIDEO, this.videoProducers],
+      [StreamKind.SCREEN, this.screenProducers],
+      [StreamKind.SCREEN_AUDIO, this.screenAudioProducers]
+    ] as const;
+
+    return maps.flatMap(([kind, producers]) =>
+      Object.entries(producers).map(([userId, producer]) => ({
+        userId: +userId,
+        kind,
+        producerId: producer.id,
+        paused: producer.paused
+      }))
+    );
+  };
+
   public getRemoteIds = (userId: number): TRemoteProducerIds => {
     return {
       remoteVideoIds: Object.keys(this.videoProducers)
@@ -1052,4 +1087,4 @@ class VoiceRuntime {
   };
 }
 
-export { VoiceRuntime };
+export { EXTERNAL_STREAM_ID_BASE, VoiceRuntime };

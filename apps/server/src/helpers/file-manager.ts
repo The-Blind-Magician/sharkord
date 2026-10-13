@@ -4,7 +4,8 @@ import {
   STORAGE_MAX_IMAGE_OPTIMIZATION_QUALITY,
   STORAGE_MIN_IMAGE_OPTIMIZATION_QUALITY,
   StorageOverflowAction,
-  type TBeforeFileSaveResult,
+  type TBeforeFileSavePayload,
+  type TBeforeFileSaveUpdate,
   type TFile,
   type TJoinedSettings,
   type TTempFile
@@ -24,6 +25,7 @@ import { files } from '../db/schema';
 import { PUBLIC_PATH, TMP_PATH, UPLOADS_PATH } from '../helpers/paths';
 import { logger } from '../logger';
 import { pluginManager } from '../plugins';
+import { runHook } from '../plugins/run-hook';
 
 /**
  * Files workflow:
@@ -35,6 +37,12 @@ import { pluginManager } from '../plugins';
  */
 
 const TEMP_FILE_TTL = 1000 * 60 * 1; // 1 minute
+
+const MAX_FILE_NAME_BYTES = 255;
+const MAX_EXTENSION_BYTES = 32;
+
+// eslint-disable-next-line no-control-regex
+const UNSAFE_FILE_NAME_CHARS = /[<>:"/\\|?*\x00-\x1F\x7F]/g;
 const OPTIMIZABLE_IMAGE_EXTENSIONS = new Set([
   '.jpg',
   '.jpeg',
@@ -68,8 +76,34 @@ const moveFile = async (src: string, dest: string) => {
   }
 };
 
+const getSafeFileName = (name: string): string => {
+  const safeName = name.replace(UNSAFE_FILE_NAME_CHARS, '_');
+
+  return /^\.*$/.test(safeName) ? 'file' : safeName;
+};
+
+// iterating by code point never splits a multibyte character
+const truncateToBytes = (value: string, maxBytes: number): string => {
+  let result = '';
+  let bytes = 0;
+
+  for (const char of value) {
+    const charBytes = Buffer.byteLength(char);
+
+    if (bytes + charBytes > maxBytes) break;
+
+    result += char;
+    bytes += charBytes;
+  }
+
+  return result;
+};
+
 const getNormalizedExtension = (name: string): string => {
-  return path.extname(name).toLowerCase();
+  return truncateToBytes(
+    path.extname(getSafeFileName(name)).toLowerCase(),
+    MAX_EXTENSION_BYTES
+  );
 };
 
 class TemporaryFileManager {
@@ -110,7 +144,7 @@ class TemporaryFileManager {
     filePath: string;
     size: number;
     originalName: string;
-    userId: number;
+    userId: number | null;
   }): Promise<TTempFile> => {
     const md5 = await md5File(filePath);
     const fileId = randomUUIDv7();
@@ -189,20 +223,25 @@ class FileManager {
     tempFile: TTempFile,
     settings: TJoinedSettings
   ) => {
-    const [userStorage, serverStorage, userStorageQuota] = await Promise.all([
-      getStorageUsageByUserId(tempFile.userId),
-      getUsedFileQuota(),
-      getEffectiveStorageSpaceQuotaByUserId(
-        tempFile.userId,
-        settings.storageSpaceQuotaByUser
-      )
-    ]);
+    const { userId } = tempFile;
 
-    const newTotalStorage = userStorage.usedStorage + tempFile.size;
+    if (userId) {
+      const [userStorage, userStorageQuota] = await Promise.all([
+        getStorageUsageByUserId(userId),
+        getEffectiveStorageSpaceQuotaByUserId(
+          userId,
+          settings.storageSpaceQuotaByUser
+        )
+      ]);
 
-    if (userStorageQuota > 0 && newTotalStorage > userStorageQuota) {
-      throw new Error('User storage limit exceeded');
+      const newTotalStorage = userStorage.usedStorage + tempFile.size;
+
+      if (userStorageQuota > 0 && newTotalStorage > userStorageQuota) {
+        throw new Error('User storage limit exceeded');
+      }
     }
+
+    const serverStorage = await getUsedFileQuota();
 
     const newServerStorage = serverStorage + tempFile.size;
 
@@ -317,60 +356,148 @@ class FileManager {
     }
   };
 
-  private applyBeforeFileSaveResult = async (
-    tempFile: TTempFile,
-    newFilePath: TBeforeFileSaveResult
-  ) => {
-    try {
-      if (!newFilePath) return;
+  private claimUniqueName = async (originalName: string): Promise<string> => {
+    const safeName = getSafeFileName(originalName);
+    const baseName = path.basename(safeName, path.extname(safeName));
+    const extension = getNormalizedExtension(safeName);
 
-      await fs.stat(newFilePath);
+    const buildName = (suffix: string) => {
+      const maxBaseBytes =
+        MAX_FILE_NAME_BYTES - Buffer.byteLength(`${suffix}${extension}`);
 
-      const previousPath = tempFile.path;
+      return `${truncateToBytes(baseName, maxBaseBytes)}${suffix}${extension}`;
+    };
 
-      tempFile.path = newFilePath;
-      tempFile.size = (await fs.stat(newFilePath)).size;
-      tempFile.md5 = await md5File(newFilePath);
-
-      if (previousPath !== newFilePath) {
-        try {
-          await fs.unlink(previousPath);
-        } catch {
-          // ignore
-        }
-      }
-    } catch (error) {
-      throw new Error(
-        `Failed to apply file changes from beforeFileSave hook: ${getErrorMessage(error)}`
-      );
-    }
-  };
-
-  private getUniqueName = async (originalName: string): Promise<string> => {
-    const baseName = path.basename(originalName, path.extname(originalName));
-    const extension = getNormalizedExtension(originalName);
-
-    let fileName = `${baseName}${extension}`;
+    let fileName = buildName('');
     let counter = 2;
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const existingFile = await db
-        .select()
+        .select({ id: files.id })
         .from(files)
         .where(eq(files.name, fileName))
         .get();
 
       if (!existingFile) {
-        break;
+        try {
+          const handle = await fs.open(path.join(PUBLIC_PATH, fileName), 'wx');
+
+          await handle.close();
+
+          break;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+            throw error;
+          }
+        }
       }
 
-      fileName = `${baseName}-${counter}${extension}`;
+      fileName = buildName(`-${counter}`);
       counter++;
     }
 
     return fileName;
   };
+
+  private runBeforeFileSaveHooks = async (
+    tempFile: TTempFile,
+    userId: number | null,
+    type: FileSaveType
+  ) => {
+    const entries = pluginManager.getHooks('beforeFileSave');
+
+    if (entries.length === 0) return;
+
+    let bytes: Uint8Array | undefined;
+
+    const result = await runHook<
+      TBeforeFileSavePayload & TBeforeFileSaveUpdate,
+      TBeforeFileSaveUpdate
+    >({
+      entries,
+      payload: {
+        readBytes: async () =>
+          (bytes ??= await Bun.file(tempFile.path).bytes()),
+        originalName: tempFile.originalName,
+        extension: tempFile.extension,
+        size: tempFile.size,
+        userId: userId ?? undefined,
+        type
+      },
+      normalize: (payload) => {
+        if (!payload.bytes) return payload;
+
+        bytes = payload.bytes;
+
+        return { ...payload, size: payload.bytes.byteLength };
+      }
+    });
+
+    if (result.originalName !== tempFile.originalName) {
+      tempFile.originalName = result.originalName;
+    }
+
+    if (!result.bytes) return;
+
+    await fs.writeFile(tempFile.path, result.bytes);
+
+    tempFile.size = result.bytes.byteLength;
+    tempFile.md5 = await md5File(tempFile.path);
+  };
+
+  private async persistTempFile(
+    tempFile: TTempFile,
+    owner: { userId: number | null; pluginId: string | null },
+    type?: FileSaveType
+  ): Promise<TFile> {
+    if (type) {
+      await this.runBeforeFileSaveHooks(tempFile, owner.userId, type);
+    }
+
+    const settings = await getSettings();
+
+    await this.optimizeImageIfEnabled(tempFile, settings);
+
+    // after optimization but before the move, so an optimized file cannot slip
+    // past the storage limits
+    this.validateFinalFileSize(tempFile, type, settings);
+
+    await this.handleStorageLimits(tempFile, settings);
+
+    // sqlite reads a leading U+FEFF or U+FFFE as a byte order mark and alters the stored name
+    const originalName = tempFile.originalName.replace(/^[\uFEFF\uFFFE]+/, '');
+    const fileName = await this.claimUniqueName(originalName);
+    const destinationPath = path.join(PUBLIC_PATH, fileName);
+
+    try {
+      await moveFile(tempFile.path, destinationPath);
+    } catch (error) {
+      await fs.rm(destinationPath, { force: true });
+
+      throw error;
+    }
+
+    await this.removeTemporaryFile(tempFile.id, true);
+
+    const bunFile = Bun.file(destinationPath);
+
+    return db
+      .insert(files)
+      .values({
+        name: fileName,
+        extension: tempFile.extension,
+        md5: tempFile.md5,
+        size: tempFile.size,
+        originalName,
+        userId: owner.userId,
+        pluginId: owner.pluginId,
+        mimeType: bunFile?.type || 'application/octet-stream',
+        createdAt: Date.now()
+      })
+      .returning()
+      .get();
+  }
 
   public async saveFile(
     tempFileId: string,
@@ -387,56 +514,39 @@ class FileManager {
       throw new Error("You don't have permission to access this file");
     }
 
-    if (type) {
-      const hooks = pluginManager.getBeforeFileSaveHooks();
+    return this.persistTempFile(tempFile, { userId, pluginId: null }, type);
+  }
 
-      for (const { handlers } of hooks) {
-        for (const handler of handlers) {
-          // freeze file to prevent plugins from modifying it directly - they must return a new path if they want to change the file
-          const frozenFile = Object.freeze({ ...tempFile });
+  public async savePluginFile(
+    pluginId: string,
+    originalName: string,
+    data: Uint8Array
+  ): Promise<TFile> {
+    const stagingPath = path.join(
+      TMP_PATH,
+      `${randomUUIDv7()}${getNormalizedExtension(originalName)}`
+    );
 
-          const result = await handler({
-            tempFile: frozenFile,
-            userId,
-            type
-          });
+    await fs.writeFile(stagingPath, data);
 
-          await this.applyBeforeFileSaveResult(tempFile, result);
-        }
-      }
+    const tempFile = await this.addTemporaryFile({
+      filePath: stagingPath,
+      size: data.byteLength,
+      originalName,
+      userId: null
+    });
+
+    try {
+      return await this.persistTempFile(
+        tempFile,
+        { userId: null, pluginId },
+        FileSaveType.MESSAGE
+      );
+    } catch (error) {
+      await this.removeTemporaryFile(tempFile.id);
+
+      throw error;
     }
-
-    const settings = await getSettings();
-
-    await this.optimizeImageIfEnabled(tempFile, settings);
-
-    // check for file size after optimization but before moving to final destination to prevent hitting storage limits with optimized files
-    this.validateFinalFileSize(tempFile, type, settings);
-
-    await this.handleStorageLimits(tempFile, settings);
-
-    const fileName = await this.getUniqueName(tempFile.originalName);
-    const destinationPath = path.join(PUBLIC_PATH, fileName);
-
-    await moveFile(tempFile.path, destinationPath);
-    await this.removeTemporaryFile(tempFileId, true);
-
-    const bunFile = Bun.file(destinationPath);
-
-    return db
-      .insert(files)
-      .values({
-        name: fileName,
-        extension: tempFile.extension,
-        md5: tempFile.md5,
-        size: tempFile.size,
-        originalName: tempFile.originalName,
-        userId,
-        mimeType: bunFile?.type || 'application/octet-stream',
-        createdAt: Date.now()
-      })
-      .returning()
-      .get();
   }
 }
 

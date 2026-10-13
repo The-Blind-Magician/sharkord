@@ -1,4 +1,4 @@
-import type { TFile } from '@sharkord/shared';
+import type { TFile, TPluginStorageUsage } from '@sharkord/shared';
 import { desc, eq, sql, sum } from 'drizzle-orm';
 import { db } from '..';
 import { attachFileToken } from '../../helpers/files-crypto';
@@ -77,6 +77,14 @@ const getFilesByMessageId = async (messageId: number): Promise<TFile[]> =>
     .all()
     .map((row) => row.files);
 
+const getFileNameById = async (fileId: number) =>
+  db
+    .select({ name: files.name })
+    .from(files)
+    .where(eq(files.id, fileId))
+    .limit(1)
+    .get();
+
 const getFilesByUserId = async (
   userId: number,
   limit: number
@@ -117,6 +125,34 @@ const getUsedFileQuota = async (): Promise<number> => {
 
 const ORPHAN_GRACE_MS = 15 * 60 * 1000; // 15 minutes
 const ORPHAN_BATCH_SIZE = 500;
+
+const getStorageUsageByPlugin = async (): Promise<TPluginStorageUsage[]> => {
+  const rows = await db.all<{
+    pluginId: string;
+    fileCount: number;
+    usedSpace: number;
+    installed: number;
+  }>(sql`
+    SELECT
+      f.plugin_id AS pluginId,
+      COUNT(*) AS fileCount,
+      COALESCE(SUM(f.size), 0) AS usedSpace,
+      EXISTS (
+        SELECT 1 FROM plugin_data pd WHERE pd.plugin_id = f.plugin_id
+      ) AS installed
+    FROM files f
+    WHERE f.plugin_id IS NOT NULL
+    GROUP BY f.plugin_id
+    ORDER BY usedSpace DESC
+  `);
+
+  return rows.map((row) => ({
+    pluginId: row.pluginId,
+    fileCount: row.fileCount,
+    usedSpace: row.usedSpace,
+    installed: !!row.installed
+  }));
+};
 
 const getOrphanedFileIds = async (): Promise<number[]> => {
   const orphanedFileIds = await db.all<{ id: number }>(sql`
@@ -165,9 +201,11 @@ const isFileOrphaned = async (fileId: number): Promise<boolean> => {
 
 export {
   getExceedingOldFiles,
+  getFileNameById,
   getFilesByMessageId,
   getFilesByUserId,
   getOrphanedFileIds,
+  getStorageUsageByPlugin,
   getUsedFileQuota,
   isFileOrphaned
 };

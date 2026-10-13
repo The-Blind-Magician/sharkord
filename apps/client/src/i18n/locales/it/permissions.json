@@ -12,6 +12,7 @@
     "JOIN_VOICE_CHANNELS": "Entrare nei canali vocali",
     "SHARE_SCREEN": "Condividere schermo",
     "ENABLE_WEBCAM": "Abilitare webcam",
+    "SEND_VOICE_REACTION": "Reagire nei canali vocali",
     "MANAGE_CHANNELS": "Gestire canali",
     "MANAGE_CHANNEL_PERMISSIONS": "Gestire permessi canale",
     "MANAGE_CATEGORIES": "Gestire categorie",
@@ -25,6 +26,7 @@
     "MANAGE_INVITES": "Gestire inviti",
     "MANAGE_UPDATES": "Gestire aggiornamenti",
     "MANAGE_PLUGINS": "Gestire plugin",
+    "MANAGE_PLUGIN_PERMISSIONS": "Gestisci permessi dei plugin",
     "USE_PLUGINS": "Usare plugin",
     "VIEW_USER_SENSITIVE_DATA": "Vedere dati sensibili utente"
   },
@@ -36,6 +38,7 @@
     "JOIN_VOICE_CHANNELS": "Concede la possibilita di entrare nei canali vocali.",
     "SHARE_SCREEN": "Concede la possibilita di condividere lo schermo.",
     "ENABLE_WEBCAM": "Concede la possibilita di abilitare la webcam.",
+    "SEND_VOICE_REACTION": "Concede la possibilita di inviare reazioni emoji nei canali vocali.",
     "MANAGE_CHANNELS": "Concede la possibilita di creare, aggiornare ed eliminare canali.",
     "MANAGE_CHANNEL_PERMISSIONS": "Concede la possibilita di gestire i permessi specifici del canale per ruoli e utenti.",
     "MANAGE_CATEGORIES": "Concede la possibilita di creare, aggiornare ed eliminare categorie.",
@@ -49,6 +52,7 @@
     "MANAGE_INVITES": "Concede la possibilita di creare, modificare ed eliminare inviti al server.",
     "MANAGE_UPDATES": "Concede la possibilita di eseguire aggiornamenti.",
     "MANAGE_PLUGINS": "Concede la possibilita di gestire i plugin.",
+    "MANAGE_PLUGIN_PERMISSIONS": "Consente di scegliere quali ruoli possono usare ogni comando e azione di un plugin. Chi lo possiede può concedere tali capacità a se stesso.",
     "USE_PLUGINS": "Concede la possibilita di usare i plugin, ad esempio eseguendo comandi plugin o visualizzando elementi UI aggiunti dai plugin.",
     "VIEW_USER_SENSITIVE_DATA": "Concede la possibilita di visualizzare dati sensibili utente come identita, indirizzo IP e posizione."
   },

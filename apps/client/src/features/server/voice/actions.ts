@@ -30,6 +30,27 @@ import { ownUserIdSelector } from '../users/selectors';
 import { ownVoiceStateSelector } from './selectors';
 import { VOICE_REACTION_DURATION_MS } from './statics';
 
+const syncOwnServerMute = (
+  userId: number,
+  newState: Partial<TVoiceUserState>
+): void => {
+  const state = store.getState();
+  const ownUserId = ownUserIdSelector(state);
+  const ownVoiceState = ownVoiceStateSelector(state);
+
+  if (userId !== ownUserId) return;
+  if (newState.serverMuted === undefined) return;
+  if (newState.serverMuted === ownVoiceState.serverMuted) return;
+
+  if (newState.serverMuted) {
+    updateOwnVoiceState({ serverMuted: true, micMuted: true });
+
+    return;
+  }
+
+  updateOwnVoiceState({ serverMuted: false });
+};
+
 export const addUserToVoiceChannel = (
   userId: number,
   channelId: number,
@@ -46,6 +67,8 @@ export const addUserToVoiceChannel = (
       state: voiceState
     })
   );
+
+  syncOwnServerMute(userId, voiceState);
 
   if (userId !== ownUserId && channelId === currentChannelId) {
     playSound(SoundType.REMOTE_USER_JOINED_VOICE_CHANNEL);
@@ -165,6 +188,10 @@ export const updateVoiceUserState = (
   store.dispatch(
     serverSliceActions.updateVoiceUserState({ userId, channelId, newState })
   );
+
+  if (channelId === currentChannelId) {
+    syncOwnServerMute(userId, newState);
+  }
 };
 
 let nextVoiceReactionId = 0;

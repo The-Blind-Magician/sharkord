@@ -6,6 +6,8 @@ import type {
   TPluginActions,
   TPluginComponentsMapBySlotId,
   TPluginContract,
+  TPluginMessageComponentProps,
+  TPluginMessageComponentsMap,
   TPluginStore,
   TPluginStoreState,
   TPluginTabs,
@@ -108,4 +110,10 @@ export {
   useStoreSelector,
   useUserData
 };
-export type { TPluginComponentsMapBySlotId, TPluginStoreState, TPluginTabs };
+export type {
+  TPluginComponentsMapBySlotId,
+  TPluginMessageComponentProps,
+  TPluginMessageComponentsMap,
+  TPluginStoreState,
+  TPluginTabs
+};

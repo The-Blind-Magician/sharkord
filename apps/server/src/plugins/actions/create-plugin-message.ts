@@ -1,4 +1,8 @@
-import { getPlainTextFromHtml, isEmptyMessage } from '@sharkord/shared';
+import {
+  getPlainTextFromHtml,
+  isEmptyMessage,
+  type TPluginMessageComponent
+} from '@sharkord/shared';
 import { eq } from 'drizzle-orm';
 import { pluginManager } from '..';
 import { db } from '../../db';
@@ -10,6 +14,7 @@ import { sanitizeMessageHtml } from '../../helpers/sanitize-html';
 import { enqueueProcessMetadata } from '../../queues/message-metadata';
 import { invariant } from '../../utils/invariant';
 import { eventBus } from '../event-bus';
+import { parsePluginMessageComponents } from './plugin-message-components';
 
 type TPluginMessageFile = {
   name: string;
@@ -24,6 +29,7 @@ type TCreatePluginMessageOptions = {
   replyToMessageId?: number;
   files?: TPluginMessageFile[];
   previews?: boolean;
+  components?: TPluginMessageComponent[];
 };
 
 const shouldSkipMessageSanitization = (content: string) => {
@@ -56,7 +62,8 @@ const createPluginMessage = async (
     parentMessageId,
     replyToMessageId,
     files = [],
-    previews = true
+    previews = true,
+    components
   } = options;
 
   invariant(pluginManager.isEnabled(pluginId), {
@@ -137,6 +144,9 @@ const createPluginMessage = async (
     ? content
     : sanitizeMessageHtml(content);
 
+  const parsedComponents =
+    components === undefined ? null : parsePluginMessageComponents(components);
+
   invariant(!isEmptyMessage(sanitizedContent) || files.length > 0, {
     code: 'BAD_REQUEST',
     message: 'Plugin message content cannot be empty.'
@@ -161,6 +171,7 @@ const createPluginMessage = async (
         channelId,
         userId: null,
         pluginId,
+        pluginComponents: parsedComponents,
         content: sanitizedContent,
         editable: false,
         parentMessageId: parentMessageId ?? null,
@@ -199,7 +210,10 @@ const createPluginMessage = async (
     userId: null,
     pluginId,
     content: sanitizedContent,
-    textContent: getPlainTextFromHtml(sanitizedContent)
+    textContent: getPlainTextFromHtml(sanitizedContent),
+    parentMessageId: message.parentMessageId,
+    replyToMessageId: message.replyToMessageId,
+    fileIds
   });
 
   return { messageId: message.id };

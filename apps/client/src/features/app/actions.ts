@@ -7,7 +7,10 @@ import {
   setLocalStorageItemBool
 } from '@/helpers/storage';
 import { i18n } from '@/i18n';
-import type { TMessageJumpToTarget } from '@/types';
+import {
+  type TMessageJumpToTarget,
+  type TThreadTarget
+} from '@/types';
 import type { TServerInfo } from '@sharkord/shared';
 import { toast } from 'sonner';
 import { markChannelAsRead, setInfo } from '../server/actions';
@@ -136,12 +139,21 @@ export const resetApp = () => {
       channelId: undefined
     })
   );
+  store.dispatch(appSliceActions.setSelectedThread(undefined));
 };
 
 export const setAutoJoinLastChannel = (autoJoin: boolean) => {
   store.dispatch(appSliceActions.setAutoJoinLastChannel(autoJoin));
 
   setLocalStorageItemBool(LocalStorageKey.AUTO_JOIN_LAST_CHANNEL, autoJoin);
+};
+
+export const setSelectedThread = (thread: TThreadTarget | undefined) => {
+  store.dispatch(appSliceActions.setSelectedThread(thread));
+
+  if (thread) {
+    closeThreadSidebar();
+  }
 };
 
 export const setSelectedDmChannelId = (channelId: number | undefined) => {

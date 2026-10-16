@@ -30,6 +30,9 @@ export const autoJoinLastChannelSelector = (state: IRootState) =>
 export const selectedDmChannelIdSelector = (state: IRootState) =>
   state.app.selectedDmChannelId;
 
+export const selectedThreadSelector = (state: IRootState) =>
+  state.app.selectedThread;
+
 export const browserNotificationsSelector = (state: IRootState) =>
   state.app.browserNotifications;
 

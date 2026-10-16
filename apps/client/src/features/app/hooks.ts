@@ -19,6 +19,7 @@ import {
   notificationSoundsSelector,
   pluginSlotDebugSelector,
   selectedDmChannelIdSelector,
+  selectedThreadSelector,
   threadSidebarDataSelector,
   voiceChatSidebarDataSelector
 } from './selectors';
@@ -43,6 +44,8 @@ export const useAutoJoinLastChannel = () =>
 
 export const useSelectedDmChannelId = () =>
   useSelector(selectedDmChannelIdSelector);
+
+export const useSelectedThread = () => useSelector(selectedThreadSelector);
 
 export const useBrowserNotifications = () =>
   useSelector(browserNotificationsSelector);

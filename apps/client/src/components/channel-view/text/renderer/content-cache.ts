@@ -5,6 +5,17 @@ import { extractYoutubeVideoIds } from './helpers';
 import { readFromCache, writeToCache } from './lru-cache';
 import { serializer } from './serializer';
 
+const HTML_TAG_PATTERN = /<\/?[a-z][\w:-]*(\s[^<>]*)?>/i;
+const MARKDOWN_PATTERN =
+  /(?:^|\s)(?:#{1,6}\s|>\s|[-*+]\s|\d+\.\s)|(?:\*\*|__|~~|`|\[[^\]]+\]\([^\)]+\))/m;
+
+const getIsMarkdownMessage = (content: string): boolean => {
+  if (!content.trim()) return false;
+  if (HTML_TAG_PATTERN.test(content)) return false;
+  return true;
+  // return MARKDOWN_PATTERN.test(content);
+};
+
 const parsedMessageCache = new Map<string, ReactNode>();
 const emojiOnlyCache = new Map<string, boolean>();
 const youtubeVideoIdsCache = new Map<string, string[]>();
@@ -30,9 +41,13 @@ const getParsedMessageHtml = (message: TJoinedMessage) => {
 
   if (cached !== undefined) return cached;
 
-  const parsed = parse(message.content ?? '', {
-    replace: (domNode: DOMNode) => serializer(domNode, message.id)
-  });
+  const content = message.content ?? '';
+
+  const parsed = getIsMarkdownMessage(content)
+    ? content
+    : parse(content, {
+        replace: (domNode: DOMNode) => serializer(domNode, message.id)
+      });
 
   writeToCache(parsedMessageCache, cacheKey, parsed);
 
@@ -66,4 +81,9 @@ const getYoutubeVideoIds = (message: TJoinedMessage) => {
   return youtubeVideoIds;
 };
 
-export { getIsEmojiOnly, getParsedMessageHtml, getYoutubeVideoIds };
+export {
+  getIsEmojiOnly,
+  getIsMarkdownMessage,
+  getParsedMessageHtml,
+  getYoutubeVideoIds
+};

@@ -26,6 +26,26 @@ type TCreatePluginMessageOptions = {
   previews?: boolean;
 };
 
+const shouldSkipMessageSanitization = (content: string) => {
+  const trimmed = content.trim();
+
+  if (!trimmed) {
+    return false;
+  }
+
+  const markdownPatterns = [
+    /^(#{1,6}\s+)/m,
+    /^\s*(?:[-*+]\s+|\d+\.\s+)/m,
+    /^\s*\|.*\|\s*$/m,
+    /^\s*```/m,
+    /\[[^\]]+\]\([^\)]+\)/,
+    /(^|\s)(\*\*|__|\*|_|`)[^\n]*\2(\s|$)/,
+    /<\s*(table|tr|tdata|h[1-6]|p|pre|code|strong|em|a)\b/i
+  ];
+
+  return markdownPatterns.some((pattern) => pattern.test(trimmed));
+};
+
 const createPluginMessage = async (
   options: TCreatePluginMessageOptions
 ): Promise<{ messageId: number }> => {
@@ -113,7 +133,9 @@ const createPluginMessage = async (
     message: `At most ${settings.storageMaxFilesPerMessage} file(s) can be attached per message.`
   });
 
-  const sanitizedContent = sanitizeMessageHtml(content);
+  const sanitizedContent = shouldSkipMessageSanitization(content)
+    ? content
+    : sanitizeMessageHtml(content);
 
   invariant(!isEmptyMessage(sanitizedContent) || files.length > 0, {
     code: 'BAD_REQUEST',

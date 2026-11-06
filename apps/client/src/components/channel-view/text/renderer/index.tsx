@@ -17,6 +17,7 @@ import { MessageReactions } from '../message-reactions';
 import { YoutubeOverride } from '../overrides/youtube';
 import {
   getIsEmojiOnly,
+  getIsMarkdownMessage,
   getParsedMessageHtml,
   getYoutubeVideoIds
 } from './content-cache';
@@ -25,6 +26,8 @@ import { Media } from './media';
 import { extractMessageMedia } from './media-cache';
 import { MessageRenderFallback } from './message-render-fallback';
 import { OpenGraph } from './open-graph';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 type TMessageRendererProps = {
   message: TJoinedMessage;
@@ -50,6 +53,14 @@ const MessageRenderer = memo(
     );
 
     const messageHtml = useMemo(() => getParsedMessageHtml(message), [message]);
+    const isMarkdownMessage = useMemo(
+      () => getIsMarkdownMessage(message.content ?? ''),
+      [message.content]
+    );
+    const markdownContent = useMemo(
+      () => (typeof messageHtml === 'string' ? messageHtml : ''),
+      [messageHtml]
+    );
 
     const onRemoveFileClick = useCallback(
       async (fileId: number) => {
@@ -104,7 +115,11 @@ const MessageRenderer = memo(
               <MessageRenderFallback error={error} reset={reset} />
             )}
           >
-            {messageHtml}
+            {isMarkdownMessage ? (
+              <Markdown remarkPlugins={[remarkGfm]}>{markdownContent}</Markdown>
+            ) : (
+              messageHtml
+            )}
           </ErrorBoundary>
           {message.editedAt && (
             <Tooltip
